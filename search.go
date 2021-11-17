@@ -19,23 +19,23 @@ type XdccFileInfo struct {
 	Slot    int
 }
 
-type XdccProvider interface {
+type XdccSearchProvider interface {
 	Search(fileName string) ([]XdccFileInfo, error)
 }
 
 type XdccProviderRegistry struct {
-	providerList []XdccProvider
+	providerList []XdccSearchProvider
 }
 
 const MaxProviders = 100
 
 func NewProviderRegistry() *XdccProviderRegistry {
 	return &XdccProviderRegistry{
-		providerList: make([]XdccProvider, 0, MaxProviders),
+		providerList: make([]XdccSearchProvider, 0, MaxProviders),
 	}
 }
 
-func (registry *XdccProviderRegistry) AddProvider(provider XdccProvider) {
+func (registry *XdccProviderRegistry) AddProvider(provider XdccSearchProvider) {
 	registry.providerList = append(registry.providerList, provider)
 }
 
@@ -47,7 +47,7 @@ func (registry *XdccProviderRegistry) Search(fileName string) ([]XdccFileInfo, e
 	wg := sync.WaitGroup{}
 	wg.Add(len(registry.providerList))
 	for _, p := range registry.providerList {
-		go func(p XdccProvider) {
+		go func(p XdccSearchProvider) {
 			res, err := p.Search(fileName)
 
 			if err != nil {
