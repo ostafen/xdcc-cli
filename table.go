@@ -8,9 +8,10 @@ import (
 type Row []string
 
 type TablePrinter struct {
-	Headers []string
-	Rows    []Row
-	MaxRows int
+	Headers   []string
+	Rows      []Row
+	MaxRows   int
+	MaxWidths []int
 }
 
 func NewTablePrinter(headers []string) *TablePrinter {
@@ -18,6 +19,10 @@ func NewTablePrinter(headers []string) *TablePrinter {
 		Headers: headers,
 		MaxRows: -1,
 	}
+}
+
+func (printer *TablePrinter) SetMaxWidths(widths []int) {
+	printer.MaxWidths = widths
 }
 
 func centerString(s string, width int) string {
@@ -70,6 +75,13 @@ func (printer *TablePrinter) computeColumnWidthds() []int {
 
 	for i := 0; i < printer.NumCols(); i++ {
 		widths[i] += paddingDefault
+
+		if printer.MaxWidths != nil {
+			if printer.MaxWidths[i] > 0 && widths[i] > printer.MaxWidths[i] {
+				widths[i] = printer.MaxWidths[i]
+			}
+		}
+
 	}
 	return widths
 }
