@@ -16,6 +16,7 @@ type XdccFileInfo struct {
 	Channel string
 	BotName string
 	Name    string
+	Url     string
 	Slot    int
 }
 
@@ -110,15 +111,23 @@ func (p *XdccEuProvider) Search(fileName string) ([]XdccFileInfo, error) {
 	}
 
 	fileInfos := make([]XdccFileInfo, 0)
-	doc.Find("tr").Each(func(i int, s *goquery.Selection) {
+	doc.Find("tr").Each(func(_ int, s *goquery.Selection) {
 		fields := make([]string, 0)
 
-		s.Find("td").Each(func(j int, si *goquery.Selection) {
+		var url string
+		s.Children().Each(func(i int, si *goquery.Selection) {
+			if i == 1 {
+				value, exists := si.Find("a").First().Attr("href")
+				if exists {
+					url = value
+				}
+			}
 			fields = append(fields, strings.TrimSpace(si.Text()))
 		})
 
 		info, err := p.parseFields(fields)
 		if err == nil {
+			info.Url = url + "/" + info.BotName + "/" + strconv.Itoa(info.Slot)
 			fileInfos = append(fileInfos, *info)
 		}
 	})
