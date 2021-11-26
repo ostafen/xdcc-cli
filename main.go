@@ -48,29 +48,32 @@ func formatSize(size int64) string {
 }
 
 func searchCommand(args []string) {
+	searchCmd := flag.NewFlagSet("search", flag.ExitOnError)
+	sortByFilename := searchCmd.Bool("s", false, "sort results by filename")
+
+	args = parseFlags(searchCmd, args)
+
 	printer := NewTablePrinter([]string{"File Name", "Size", "URL"})
 	printer.SetMaxWidths(defaultColWidths)
+
+	if len(args) < 1 {
+		fmt.Println("search: no keyword provided.")
+		os.Exit(1)
+	}
 
 	res, _ := registry.Search(args[0])
 	for _, fileInfo := range res {
 		printer.AddRow(Row{fileInfo.Name, formatSize(fileInfo.Size), fileInfo.Url})
 	}
 
-	printer.SortByColumn(0) // sort by filename
+	if *sortByFilename {
+		printer.SortByColumn(0)
+	}
 	printer.Print()
 }
 
-func doTransfer(transfer *XdccTransfer) {
-	//pb := NewProgressBar()
-
-	err := transfer.Start()
-
-	fmt.Println(err)
-
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+func transferLoop(transfer *XdccTransfer) {
+	pb := NewProgressBar()
 
 	evts := transfer.PollEvents()
 	quit := false
@@ -78,18 +81,28 @@ func doTransfer(transfer *XdccTransfer) {
 		e := <-evts
 		switch evtType := e.(type) {
 		case *TransferStartedEvent:
-			//		pb.SetTotal(int(evtType.FileSize))
-			//		pb.SetFileName(evtType.FileName)
-			//		pb.SetState(ProgressStateDownloading)
+			pb.SetTotal(int(evtType.FileSize))
+			pb.SetFileName(evtType.FileName)
+			pb.SetState(ProgressStateDownloading)
 		case *TransferProgessEvent:
-			//		pb.Increment(int(evtType.transferBytes))
+			pb.Increment(int(evtType.transferBytes))
 		case *TransferCompletedEvent:
-			//		pb.SetState(ProgressStateCompleted)
-			print(evtType)
+			pb.SetState(ProgressStateCompleted)
 			quit = true
 		}
 	}
 	// TODO: do clean-up operations here
+}
+
+func doTransfer(transfer *XdccTransfer) {
+	err := transfer.Start()
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	transferLoop(transfer)
 }
 
 func parseFlags(flagSet *flag.FlagSet, args []string) []string {
@@ -133,11 +146,11 @@ func loadUrlListFile(filePath string) []string {
 }
 
 func getCommand(args []string) {
-	searchCmd := flag.NewFlagSet("get", flag.ExitOnError)
-	path := searchCmd.String("o", ".", "output folder of dowloaded file")
-	inputFile := searchCmd.String("i", "", "input file containing a list of urls")
+	getCmd := flag.NewFlagSet("get", flag.ExitOnError)
+	path := getCmd.String("o", ".", "output folder of dowloaded file")
+	inputFile := getCmd.String("i", "", "input file containing a list of urls")
 
-	urlList := parseFlags(searchCmd, args)
+	urlList := parseFlags(getCmd, args)
 
 	if *inputFile != "" {
 		urlList = append(urlList, loadUrlListFile(*inputFile)...)
