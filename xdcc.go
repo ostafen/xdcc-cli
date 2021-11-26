@@ -118,36 +118,25 @@ func (transfer *XdccTransfer) Start() error {
 	return transfer.conn.Connect()
 }
 
-type XdccEvent interface{}
+type TransferEvent interface{}
 
 type TransferAbortedEvent struct {
 	Error string
 }
 
+const maxConnAttempts = 5
+
 type XdccTransfer struct {
-	filePath string
-	url      IRCFileURL
-	conn     *irc.Conn
-	started  bool
-	events   chan XdccEvent
-}
-
-type TransferManager struct {
-	transfers map[IRCBot]*XdccTransfer
-}
-
-func (tm *TransferManager) addTransfer(fileUrl *IRCFileURL, filePath string) {
-	transfer, ok := tm.transfers[fileUrl.GetBot()]
-
-	if !ok {
-		transfer = NewXdccTransfer(*fileUrl, filePath)
-		tm.transfers[fileUrl.GetBot()] = transfer
-		// add transfer
-	}
-
+	filePath     string
+	url          IRCFileURL
+	conn         *irc.Conn
+	connAttempts int
+	started      bool
+	events       chan TransferEvent
 }
 
 func NewXdccTransfer(url IRCFileURL, filePath string) *XdccTransfer {
+	rand.Seed(time.Now().UTC().UnixNano())
 	conn := irc.SimpleClient(IRCClientUserName + strconv.Itoa(int(rand.Uint32())))
 	conn.Config().Server = url.Network
 	conn.Config().NewNick = func(nick string) string {
@@ -155,11 +144,12 @@ func NewXdccTransfer(url IRCFileURL, filePath string) *XdccTransfer {
 	}
 
 	t := &XdccTransfer{
-		conn:     conn,
-		url:      url,
-		filePath: filePath,
-		started:  false,
-		events:   make(chan XdccEvent, defaultEventChanSize),
+		conn:         conn,
+		url:          url,
+		filePath:     filePath,
+		started:      false,
+		connAttempts: 0,
+		events:       make(chan TransferEvent, defaultEventChanSize),
 	}
 	t.setupHandlers(url.Channel, url.UserName, url.Slot)
 	return t
@@ -175,22 +165,28 @@ func (transfer *XdccTransfer) setupHandlers(channel string, userName string, slo
 	// e.g. join channel on connect.
 	conn.HandleFunc(irc.CONNECTED,
 		func(conn *irc.Conn, line *irc.Line) {
-			fmt.Println("connected ", channel)
+			transfer.connAttempts = 0
 			conn.Join(channel)
 		})
+
+	conn.HandleFunc(irc.ERROR, func(conn *irc.Conn, line *irc.Line) {
+
+	})
 
 	// send xdcc send on successfull join
 	conn.HandleFunc(irc.JOIN,
 		func(conn *irc.Conn, line *irc.Line) {
 			if line.Args[0] == channel && !transfer.started {
-				fmt.Println("contacting ", transfer.url.UserName)
 				transfer.send(&XdccSendReq{Slot: slot})
 			}
 		})
 
+	conn.HandleFunc(irc.PRIVMSG, func(conn *irc.Conn, line *irc.Line) {
+
+	})
+
 	conn.HandleFunc(irc.CTCP,
 		func(conn *irc.Conn, line *irc.Line) {
-			fmt.Println(line.Text())
 			res, err := parseCTCPRes(line.Text())
 			if err != nil {
 				fmt.Println(err.Error())
@@ -201,13 +197,23 @@ func (transfer *XdccTransfer) setupHandlers(channel string, userName string, slo
 
 	conn.HandleFunc(irc.DISCONNECTED,
 		func(conn *irc.Conn, line *irc.Line) {
-			if !transfer.started {
+			var err error = nil
+
+			if transfer.connAttempts < maxConnAttempts {
+				time.Sleep(time.Second)
+
+				err = conn.Connect()
+			}
+
+			if (err != nil || transfer.connAttempts >= maxConnAttempts) && !transfer.started {
 				transfer.notifyEvent(&TransferAbortedEvent{Error: "disconnected from server"})
 			}
+
+			transfer.connAttempts++
 		})
 }
 
-func (transfer *XdccTransfer) PollEvents() chan XdccEvent {
+func (transfer *XdccTransfer) PollEvents() chan TransferEvent {
 	return transfer.events
 }
 
@@ -225,7 +231,7 @@ type TransferStartedEvent struct {
 
 type TransferCompletedEvent struct{}
 
-func (transfer *XdccTransfer) notifyEvent(e XdccEvent) {
+func (transfer *XdccTransfer) notifyEvent(e TransferEvent) {
 	select {
 	case transfer.events <- e:
 	default:
