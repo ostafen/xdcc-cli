@@ -17,6 +17,7 @@ type XdccFileInfo struct {
 	BotName string
 	Name    string
 	Url     string
+	Size    int64
 	Slot    int
 }
 
@@ -68,8 +69,33 @@ type XdccEuProvider struct{}
 
 const XdccEuURL = "https://www.xdcc.eu/search.php"
 
+func parseFileSize(sizeStr string) (int64, error) {
+	if len(sizeStr) == 0 {
+		return -1, errors.New("empty string")
+	}
+	lastChar := sizeStr[len(sizeStr)-1]
+	sizePart := sizeStr[:len(sizeStr)-1]
+
+	size, err := strconv.ParseFloat(sizePart, 32)
+
+	if err != nil {
+		return -1, err
+	}
+	switch lastChar {
+	case 'G':
+		return int64(size * GigaByte), nil
+	case 'M':
+		return int64(size * MegaByte), nil
+	case 'K':
+		return int64(size * KiloByte), nil
+	}
+	return -1, errors.New("unable to parse: " + sizeStr)
+}
+
+const xdccEuNumberOfEntries = 7
+
 func (p *XdccEuProvider) parseFields(fields []string) (*XdccFileInfo, error) {
-	if len(fields) != 7 {
+	if len(fields) != xdccEuNumberOfEntries {
 		return nil, errors.New("unespected number of search entry fields")
 	}
 
@@ -78,6 +104,13 @@ func (p *XdccEuProvider) parseFields(fields []string) (*XdccFileInfo, error) {
 	fInfo.Channel = fields[1]
 	fInfo.BotName = fields[2]
 	slot, err := strconv.Atoi(fields[3][1:])
+
+	if err != nil {
+		return nil, err
+	}
+
+	fInfo.Size, _ = parseFileSize(fields[5]) // ignoring error
+
 	fInfo.Name = fields[6]
 
 	if err != nil {
