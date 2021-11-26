@@ -14,13 +14,19 @@ type IRCFileURL struct {
 	Slot     int
 }
 
+type IRCBot struct {
+	Network string
+	Channel string
+	Name    string
+}
+
 const ircFileURLFields = 4
 
 func parseSlot(slotStr string) (int, error) {
-	if !strings.HasPrefix(slotStr, "#") {
-		return -1, errors.New("invalid slot")
+	if strings.HasPrefix(slotStr, "#") {
+		strconv.Atoi(strings.TrimPrefix(slotStr, "#"))
 	}
-	return strconv.Atoi(strings.TrimPrefix(slotStr, "#"))
+	return strconv.Atoi(slotStr)
 }
 
 // url has the following format: irc://network/channel/bot/#slot
@@ -39,12 +45,21 @@ func parseIRCFileURl(url string) (*IRCFileURL, error) {
 		return nil, err
 	}
 
-	return &IRCFileURL{
+	fileUrl := &IRCFileURL{
 		Network:  fields[0],
 		Channel:  fields[1],
 		UserName: fields[2],
 		Slot:     slot,
-	}, nil
+	}
+
+	if !strings.HasPrefix(fileUrl.Channel, "#") {
+		fileUrl.Channel = "#" + fileUrl.Channel
+	}
+	return fileUrl, nil
+}
+
+func (url *IRCFileURL) GetBot() IRCBot {
+	return IRCBot{Network: url.Network, Channel: url.Channel, Name: url.UserName}
 }
 
 func (url *IRCFileURL) String() string {

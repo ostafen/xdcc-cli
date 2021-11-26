@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
+	"sync"
 )
 
 var registry *XdccProviderRegistry = nil
@@ -13,20 +17,156 @@ func init() {
 	registry.AddProvider(&XdccEuProvider{})
 }
 
-func search(fileName string) {
-	printer := NewTablePrinter([]string{"File Name", "Network", "Channel"})
+var defaultColWidths []int = []int{100, 10, -1}
 
-	res, _ := registry.Search(fileName)
-	for _, fileInfo := range res {
-		printer.AddRow(Row{fileInfo.Name, fileInfo.Network, fileInfo.Channel})
+const (
+	KiloByte = 1024
+	MegaByte = KiloByte * 1024
+	GigaByte = MegaByte * 1024
+)
+
+func FloatToString(value float64) string {
+	if value-float64(int64(value)) > 0 {
+		return strconv.FormatFloat(value, 'f', 2, 32)
+	}
+	return strconv.FormatFloat(value, 'f', 0, 32)
+}
+
+func formatSize(size int64) string {
+	if size < 0 {
+		return "--"
 	}
 
+	if size >= GigaByte {
+		return FloatToString(float64(size)/float64(GigaByte)) + "GB"
+	} else if size >= MegaByte {
+		return FloatToString(float64(size)/float64(MegaByte)) + "MB"
+	} else if size >= KiloByte {
+		return FloatToString(float64(size)/float64(KiloByte)) + "KB"
+	}
+	return FloatToString(float64(size)) + "B"
+}
+
+func searchCommand(args []string) {
+	printer := NewTablePrinter([]string{"File Name", "Size", "URL"})
+	printer.SetMaxWidths(defaultColWidths)
+
+	res, _ := registry.Search(args[0])
+	for _, fileInfo := range res {
+		printer.AddRow(Row{fileInfo.Name, formatSize(fileInfo.Size), fileInfo.Url})
+	}
+
+	printer.SortByColumn(0) // sort by filename
 	printer.Print()
 }
 
+func doTransfer(transfer *XdccTransfer) {
+	//pb := NewProgressBar()
+
+	err := transfer.Start()
+
+	fmt.Println(err)
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	evts := transfer.PollEvents()
+	quit := false
+	for !quit {
+		e := <-evts
+		switch evtType := e.(type) {
+		case *TransferStartedEvent:
+			//		pb.SetTotal(int(evtType.FileSize))
+			//		pb.SetFileName(evtType.FileName)
+			//		pb.SetState(ProgressStateDownloading)
+		case *TransferProgessEvent:
+			//		pb.Increment(int(evtType.transferBytes))
+		case *TransferCompletedEvent:
+			//		pb.SetState(ProgressStateCompleted)
+			print(evtType)
+			quit = true
+		}
+	}
+	// TODO: do clean-up operations here
+}
+
+func parseFlags(flagSet *flag.FlagSet, args []string) []string {
+	findFirstFlag := func(args []string) int {
+		for i, arg := range args {
+			if strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
+				return i
+			}
+		}
+		return -1
+	}
+	flagIdx := findFirstFlag(args)
+	if flagIdx >= 0 {
+		flagSet.Parse(args[flagIdx:])
+		return args[:flagIdx]
+	}
+	return args
+}
+
+func loadUrlListFile(filePath string) []string {
+	file, err := os.Open(filePath)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	urlList := make([]string, 0)
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		urlList = append(urlList, line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	return urlList
+}
+
+func getCommand(args []string) {
+	searchCmd := flag.NewFlagSet("get", flag.ExitOnError)
+	path := searchCmd.String("o", ".", "output folder of dowloaded file")
+	inputFile := searchCmd.String("i", "", "input file containing a list of urls")
+
+	urlList := parseFlags(searchCmd, args)
+
+	if *inputFile != "" {
+		urlList = append(urlList, loadUrlListFile(*inputFile)...)
+	}
+
+	wg := sync.WaitGroup{}
+	for _, urlStr := range urlList {
+		if strings.HasPrefix(urlStr, "irc://") {
+			url, err := parseIRCFileURl(urlStr)
+
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(1)
+			}
+
+			wg.Add(1)
+			transfer := NewXdccTransfer(*url, *path)
+			go func(transfer *XdccTransfer) {
+				doTransfer(transfer)
+				wg.Done()
+			}(transfer)
+		} else {
+
+		}
+	}
+	wg.Wait()
+}
+
 func main() {
-	searchCmd := flag.NewFlagSet("foo", flag.ExitOnError)
-	fileName := searchCmd.String("f", "", "name of the file to search")
 
 	if len(os.Args) < 2 {
 		fmt.Println("one of the following subcommands is expected: [search, get]")
@@ -35,10 +175,9 @@ func main() {
 
 	switch os.Args[1] {
 	case "search":
-		searchCmd.Parse(os.Args[2:])
-		search(*fileName)
+		searchCommand(os.Args[2:])
 	case "get":
-		break
+		getCommand(os.Args[2:])
 	default:
 		fmt.Println("no such command: ", os.Args[1])
 		os.Exit(1)
