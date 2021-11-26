@@ -72,12 +72,16 @@ func createMpbBar(p *mpb.Progress, total int, taskName string, state ProgressSta
 	)
 }
 
-func newProgressBarImpl() *progressBarImpl {
-	progress := mpb.New(
+var progress *mpb.Progress = nil
+
+func init() {
+	progress = mpb.New(
 		mpb.WithWidth(barWidthDefault),
 		mpb.WithRefreshRate(barRefreshRateDefault),
 	)
+}
 
+func newProgressBarImpl() *progressBarImpl {
 	bar := createMpbBar(progress, 0, "", ProgressStateConnecting, nil)
 	return &progressBarImpl{
 		progress: progress,
