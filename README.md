@@ -1,4 +1,4 @@
-# XDCC CLI
+# XDCC Command Line Tools
 
 This project provides a simple command line tool which allow you to perform search and retrieval of files on the IRC network through the XDCC protocol.
 
