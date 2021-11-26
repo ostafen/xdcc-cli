@@ -38,7 +38,7 @@ If the command succedeeds, a table, similar to the following, will be displayed:
 A part from file details, each row will contain an **url** of the form irc://network/channel/bot/slot, which identifies the file on the IRC network. 
 To download one or more file, simply pass a list of url to the **get** subcommand like so:
 
-```console
+```bash
 foo@bar:~$ xdcc get url1 url2 ... [-o /path/to/an/output/directory]
 ```
 Alternatively, you could also specify a .txt input file, containing a list of urls (one for each line), using the **-i** switch.
