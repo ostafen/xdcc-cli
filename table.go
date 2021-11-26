@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -32,12 +33,15 @@ func centerString(s string, width int) string {
 	return strings.Repeat(" ", leftPadding) + s + strings.Repeat(" ", rightPadding)
 }
 
-func formatStr(fileName string, maxSize int) string {
-	if len(fileName) <= maxSize {
-		return centerString(fileName, maxSize)
+func cutStr(s string, maxSize int) string {
+	if len(s) <= maxSize {
+		return s
 	}
+	return s[:maxSize-3] + "..."
+}
 
-	return centerString(fileName[:maxSize-3]+"...", maxSize)
+func formatStr(s string, maxSize int) string {
+	return centerString(cutStr(s, maxSize), maxSize)
 }
 
 const paddingDefault = 2
@@ -122,6 +126,14 @@ func (printer *TablePrinter) AddRow(r Row) {
 	}
 	printer.Rows = append(printer.Rows, r)
 
+}
+
+func (printer *TablePrinter) SortByColumn(col int) {
+	if col < printer.NumCols() {
+		sort.Slice(printer.Rows, func(i, j int) bool {
+			return printer.Rows[i][col] < printer.Rows[j][col]
+		})
+	}
 }
 
 func (printer *TablePrinter) Print() {
