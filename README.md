@@ -11,7 +11,8 @@ This project provides a simple command line tool which allow you to perform sear
 
 Assuming you have the latest version of Go installed on your system, you can use the **buid** command to get an executable:
 
-```bash git clone https://github.com/ostafen/xdcc-cli.git
+```bash 
+git clone https://github.com/ostafen/xdcc-cli.git
 cd xdcc-cli
 go build . -o xdcc
 ```
