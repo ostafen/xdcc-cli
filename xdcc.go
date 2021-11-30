@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -137,11 +138,17 @@ type XdccTransfer struct {
 
 func NewXdccTransfer(url IRCFileURL, filePath string) *XdccTransfer {
 	rand.Seed(time.Now().UTC().UnixNano())
-	conn := irc.SimpleClient(IRCClientUserName + strconv.Itoa(int(rand.Uint32())))
-	conn.Config().Server = url.Network
-	conn.Config().NewNick = func(nick string) string {
+	nick := IRCClientUserName + strconv.Itoa(int(rand.Uint32()))
+
+	config := irc.NewConfig(nick)
+	config.SSL = true
+	config.SSLConfig = &tls.Config{ServerName: url.Network}
+	config.Server = url.Network
+	config.NewNick = func(nick string) string {
 		return nick + "" + strconv.Itoa(int(rand.Uint32()))
 	}
+
+	conn := irc.Client(config)
 
 	t := &XdccTransfer{
 		conn:         conn,
@@ -181,9 +188,7 @@ func (transfer *XdccTransfer) setupHandlers(channel string, userName string, slo
 			}
 		})
 
-	conn.HandleFunc(irc.PRIVMSG, func(conn *irc.Conn, line *irc.Line) {
-
-	})
+	conn.HandleFunc(irc.PRIVMSG, func(conn *irc.Conn, line *irc.Line) {})
 
 	conn.HandleFunc(irc.CTCP,
 		func(conn *irc.Conn, line *irc.Line) {
