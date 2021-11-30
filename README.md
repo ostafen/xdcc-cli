@@ -1,8 +1,10 @@
-```html
-<head>
-    <meta name="google-site-verification" content="4Rjg8YnufgHBYdLu-gAUsmJasHk03XKYhUXtRMNZdsk" />
-</head>
-```
+<!--
+  Title: xdcc-cli
+  Description: A command line tool for xdcc file search and retrival.
+  Author: ostafen
+
+ <meta name="google-site-verification" content="4Rjg8YnufgHBYdLu-gAUsmJasHk03XKYhUXtRMNZdsk" />
+-->
 
 # XDCC Command Line Tools
 
