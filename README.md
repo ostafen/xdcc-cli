@@ -1,5 +1,7 @@
 ```html
-<meta name="google-site-verification" content="4Rjg8YnufgHBYdLu-gAUsmJasHk03XKYhUXtRMNZdsk" />
+<head>
+    <meta name="google-site-verification" content="4Rjg8YnufgHBYdLu-gAUsmJasHk03XKYhUXtRMNZdsk" />
+</head>
 ```
 
 # XDCC Command Line Tools
