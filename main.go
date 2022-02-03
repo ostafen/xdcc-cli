@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"os"
@@ -94,11 +95,18 @@ func transferLoop(transfer *XdccTransfer) {
 	// TODO: do clean-up operations here
 }
 
+func suggestUnknownAuthoritySwitch(err error) {
+	if err.Error() == (x509.UnknownAuthorityError{}.Error()) {
+		fmt.Println("use the --allow-unknown-authority flag to skip certificate verification")
+	}
+}
+
 func doTransfer(transfer *XdccTransfer) {
 	err := transfer.Start()
 
 	if err != nil {
 		fmt.Println(err)
+		suggestUnknownAuthoritySwitch(err)
 		return
 	}
 
@@ -145,10 +153,18 @@ func loadUrlListFile(filePath string) []string {
 	return urlList
 }
 
+func printGetUsageAndExit(flagSet *flag.FlagSet) {
+	fmt.Printf("usage: get url1 url2 ... [-o path] [-i file] [--allow-unknown-authority]\n\nFlag set:\n")
+	flagSet.PrintDefaults()
+	os.Exit(0)
+}
+
 func getCommand(args []string) {
 	getCmd := flag.NewFlagSet("get", flag.ExitOnError)
 	path := getCmd.String("o", ".", "output folder of dowloaded file")
 	inputFile := getCmd.String("i", "", "input file containing a list of urls")
+
+	skipCertificateCheck := getCmd.Bool("allow-unknown-authority", false, "skip x509 certificate check during tls connection")
 
 	urlList := parseFlags(getCmd, args)
 
@@ -157,8 +173,7 @@ func getCommand(args []string) {
 	}
 
 	if len(urlList) == 0 {
-		fmt.Println("no file url provided")
-		os.Exit(1)
+		printGetUsageAndExit(getCmd)
 	}
 
 	wg := sync.WaitGroup{}
@@ -172,7 +187,7 @@ func getCommand(args []string) {
 			}
 
 			wg.Add(1)
-			transfer := NewXdccTransfer(*url, *path)
+			transfer := NewXdccTransfer(*url, *path, *skipCertificateCheck)
 			go func(transfer *XdccTransfer) {
 				doTransfer(transfer)
 				wg.Done()
