@@ -156,6 +156,11 @@ func getCommand(args []string) {
 		urlList = append(urlList, loadUrlListFile(*inputFile)...)
 	}
 
+	if len(urlList) == 0 {
+		fmt.Println("no file url provided")
+		os.Exit(1)
+	}
+
 	wg := sync.WaitGroup{}
 	for _, urlStr := range urlList {
 		if strings.HasPrefix(urlStr, "irc://") {
