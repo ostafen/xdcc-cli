@@ -62,7 +62,7 @@ func searchCommand(args []string) {
 		os.Exit(1)
 	}
 
-	res, _ := registry.Search(args[0])
+	res, _ := registry.Search(args)
 	for _, fileInfo := range res {
 		printer.AddRow(Row{fileInfo.Name, formatSize(fileInfo.Size), fileInfo.Url})
 	}

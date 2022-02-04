@@ -22,7 +22,7 @@ type XdccFileInfo struct {
 }
 
 type XdccSearchProvider interface {
-	Search(fileName string) ([]XdccFileInfo, error)
+	Search(keywords []string) ([]XdccFileInfo, error)
 }
 
 type XdccProviderRegistry struct {
@@ -43,14 +43,14 @@ func (registry *XdccProviderRegistry) AddProvider(provider XdccSearchProvider) {
 
 const MaxResults = 1024
 
-func (registry *XdccProviderRegistry) Search(fileName string) ([]XdccFileInfo, error) {
+func (registry *XdccProviderRegistry) Search(keywords []string) ([]XdccFileInfo, error) {
 	allResults := make([]XdccFileInfo, 0, MaxResults)
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(registry.providerList))
 	for _, p := range registry.providerList {
 		go func(p XdccSearchProvider) {
-			res, err := p.Search(fileName)
+			res, err := p.Search(keywords)
 
 			if err != nil {
 				return
@@ -121,8 +121,9 @@ func (p *XdccEuProvider) parseFields(fields []string) (*XdccFileInfo, error) {
 	return fInfo, nil
 }
 
-func (p *XdccEuProvider) Search(fileName string) ([]XdccFileInfo, error) {
-	searchkey := strings.Join(strings.Fields(fileName), "+")
+func (p *XdccEuProvider) Search(keywords []string) ([]XdccFileInfo, error) {
+	keywordString := strings.Join(keywords, " ")
+	searchkey := strings.Join(strings.Fields(keywordString), "+")
 	res, err := http.Get(XdccEuURL + "?searchkey=" + searchkey)
 
 	if err != nil {
