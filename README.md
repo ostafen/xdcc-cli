@@ -22,7 +22,7 @@ Assuming you have the latest version of Go installed on your system, you can use
 ```bash 
 git clone https://github.com/ostafen/xdcc-cli.git
 cd xdcc-cli
-go build . -o xdcc
+go build -o xdcc .
 ```
 
 ## Usage
