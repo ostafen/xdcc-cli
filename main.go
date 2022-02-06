@@ -193,7 +193,7 @@ func getCommand(args []string) {
 				wg.Done()
 			}(transfer)
 		} else {
-
+			fmt.Printf("no valid irc url %s\n", urlStr)
 		}
 	}
 	wg.Wait()
