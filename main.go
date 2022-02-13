@@ -163,8 +163,8 @@ func getCommand(args []string) {
 	getCmd := flag.NewFlagSet("get", flag.ExitOnError)
 	path := getCmd.String("o", ".", "output folder of dowloaded file")
 	inputFile := getCmd.String("i", "", "input file containing a list of urls")
-
 	skipCertificateCheck := getCmd.Bool("allow-unknown-authority", false, "skip x509 certificate check during tls connection")
+	noSSL := getCmd.Bool("no-ssl", false, "disable SSL.")
 
 	urlList := parseFlags(getCmd, args)
 
@@ -187,7 +187,7 @@ func getCommand(args []string) {
 			}
 
 			wg.Add(1)
-			transfer := NewXdccTransfer(*url, *path, *skipCertificateCheck)
+			transfer := NewXdccTransfer(*url, *path, !*noSSL, *skipCertificateCheck)
 			go func(transfer *XdccTransfer) {
 				doTransfer(transfer)
 				wg.Done()

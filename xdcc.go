@@ -136,12 +136,12 @@ type XdccTransfer struct {
 	events       chan TransferEvent
 }
 
-func NewXdccTransfer(url IRCFileURL, filePath string, skipCertificateCheck bool) *XdccTransfer {
+func NewXdccTransfer(url IRCFileURL, filePath string, enableSSL bool, skipCertificateCheck bool) *XdccTransfer {
 	rand.Seed(time.Now().UTC().UnixNano())
 	nick := IRCClientUserName + strconv.Itoa(int(rand.Uint32()))
 
 	config := irc.NewConfig(nick)
-	config.SSL = true
+	config.SSL = enableSSL
 	config.SSLConfig = &tls.Config{ServerName: url.Network, InsecureSkipVerify: skipCertificateCheck}
 	config.Server = url.Network
 	config.NewNick = func(nick string) string {
