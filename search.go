@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"io/ioutil"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -134,9 +134,8 @@ func (p *XdccEuProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 	}
 
 	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
-		return nil, err
+	if res.StatusCode != http.StatusOK {
+		return nil, errors.New(fmt.Sprintf("status code error: %d %s", res.StatusCode, res.Status))
 	}
 
 	// Load the HTML document
@@ -176,27 +175,24 @@ const SunXdccURL = "http://sunxdcc.com/deliver.php"
 
 const SunXdccNumberOfEntries = 8
 
-func (p *SunXdccProvider) parseFields(fields []string) (*XdccFileInfo, error) {
-	if len(fields) != SunXdccNumberOfEntries {
-		return nil, errors.New("unexpected number of search entry fields")
-	}
+func (p *SunXdccProvider) parseFields(entry SunXdccEntry, index int) (*XdccFileInfo, error) {
 
 	fInfo := &XdccFileInfo{}
-	fInfo.Network = fields[1]
-	fInfo.BotName = fields[2]
-	fInfo.Channel = fields[3]
+	fInfo.Network = entry.Network[index]
+	fInfo.BotName = entry.Bot[index]
+	fInfo.Channel = entry.Channel[index]
 
-	slot, err := strconv.Atoi(fields[4][1:])
+	slot, err := strconv.Atoi(entry.Packnum[index][1:])
 
 	if err != nil {
 		return nil, err
 	}
 
-	sizeString := strings.TrimLeft(strings.TrimRight(fields[6], "]"), "[")
+	sizeString := strings.TrimLeft(strings.TrimRight(entry.Fsize[index], "]"), "[")
 
 	fInfo.Size, _ = parseFileSize(sizeString) // ignoring error
 
-	fInfo.Name = fields[7]
+	fInfo.Name = entry.Fname[index]
 
 	if err != nil {
 		return nil, err
@@ -232,22 +228,17 @@ func (p *SunXdccProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 	}
 
 	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
-		return nil, err
-	}
-
-	body, err := ioutil.ReadAll(res.Body)
-
-	if err != nil {
-		log.Fatal(err)
-		return nil, err
+	if res.StatusCode != http.StatusOK {
+		return nil, errors.New(fmt.Sprintf("status code error: %d %s", res.StatusCode, res.Status))
 	}
 
 	// Load the JSON Response document
 
 	var entry SunXdccEntry
-	json.Unmarshal([]byte(body), &entry)
+	decoder := json.NewDecoder(res.Body)
+	if err := decoder.Decode(&entry); err != nil {
+		return nil, err
+	}
 
 	var sizes = [8]int{
 		len(entry.Botrec),
@@ -269,29 +260,9 @@ func (p *SunXdccProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 
 	fileInfos := make([]XdccFileInfo, 0)
 
-	type XdccFileInfo struct {
-		Network string
-		Channel string
-		BotName string
-		Name    string
-		Url     string
-		Size    int64
-		Slot    int
-	}
-
 	for i := 0; i < len(entry.Botrec); i++ {
 
-		var fields = []string{
-			entry.Botrec[i],
-			entry.Network[i],
-			entry.Bot[i],
-			entry.Channel[i],
-			entry.Packnum[i],
-			entry.Gets[i],
-			entry.Fsize[i],
-			entry.Fname[i]}
-
-		info, err := p.parseFields(fields)
+		info, err := p.parseFields(entry, i)
 		if err == nil {
 			fileInfos = append(fileInfos, *info)
 		}
