@@ -16,6 +16,7 @@ var registry *XdccProviderRegistry = nil
 func init() {
 	registry = NewProviderRegistry()
 	registry.AddProvider(&XdccEuProvider{})
+	registry.AddProvider(&SunXdccProvider{})
 }
 
 var defaultColWidths []int = []int{100, 10, -1}
