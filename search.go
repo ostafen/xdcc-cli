@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
@@ -65,10 +67,6 @@ func (registry *XdccProviderRegistry) Search(keywords []string) ([]XdccFileInfo,
 	return allResults, nil
 }
 
-type XdccEuProvider struct{}
-
-const XdccEuURL = "https://www.xdcc.eu/search.php"
-
 func parseFileSize(sizeStr string) (int64, error) {
 	if len(sizeStr) == 0 {
 		return -1, errors.New("empty string")
@@ -92,11 +90,15 @@ func parseFileSize(sizeStr string) (int64, error) {
 	return -1, errors.New("unable to parse: " + sizeStr)
 }
 
+type XdccEuProvider struct{}
+
+const XdccEuURL = "https://www.xdcc.eu/search.php"
+
 const xdccEuNumberOfEntries = 7
 
 func (p *XdccEuProvider) parseFields(fields []string) (*XdccFileInfo, error) {
 	if len(fields) != xdccEuNumberOfEntries {
-		return nil, errors.New("unespected number of search entry fields")
+		return nil, errors.New("unexpected number of search entry fields")
 	}
 
 	fInfo := &XdccFileInfo{}
@@ -165,5 +167,135 @@ func (p *XdccEuProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 			fileInfos = append(fileInfos, *info)
 		}
 	})
+	return fileInfos, nil
+}
+
+type SunXdccProvider struct{}
+
+const SunXdccURL = "http://sunxdcc.com/deliver.php"
+
+const SunXdccNumberOfEntries = 8
+
+func (p *SunXdccProvider) parseFields(fields []string) (*XdccFileInfo, error) {
+	if len(fields) != SunXdccNumberOfEntries {
+		return nil, errors.New("unexpected number of search entry fields")
+	}
+
+	fInfo := &XdccFileInfo{}
+	fInfo.Network = fields[1]
+	fInfo.BotName = fields[2]
+	fInfo.Channel = fields[3]
+
+	slot, err := strconv.Atoi(fields[4][1:])
+
+	if err != nil {
+		return nil, err
+	}
+
+	sizeString := strings.TrimLeft(strings.TrimRight(fields[6], "]"), "[")
+
+	fInfo.Size, _ = parseFileSize(sizeString) // ignoring error
+
+	fInfo.Name = fields[7]
+
+	if err != nil {
+		return nil, err
+	}
+
+	fInfo.Slot = slot
+
+	fInfo.Url = "irc://" + fInfo.Network + "/" + strings.TrimLeft(fInfo.Channel, "#") + "/" + fInfo.BotName + "/" + strconv.Itoa(fInfo.Slot)
+
+	return fInfo, nil
+}
+
+type SunXdccEntry struct {
+	Botrec  []string
+	Network []string
+	Bot     []string
+	Channel []string
+	Packnum []string
+	Gets    []string
+	Fsize   []string
+	Fname   []string
+}
+
+func (p *SunXdccProvider) Search(keywords []string) ([]XdccFileInfo, error) {
+	keywordString := strings.Join(keywords, " ")
+	searchkey := strings.Join(strings.Fields(keywordString), "+")
+	// for API definition use https://sunxdcc.com/#api
+	res, err := http.Get(SunXdccURL + "?sterm=" + searchkey)
+
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		log.Fatalf("status code error: %d %s", res.StatusCode, res.Status)
+		return nil, err
+	}
+
+	body, err := ioutil.ReadAll(res.Body)
+
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	// Load the JSON Response document
+
+	var entry SunXdccEntry
+	json.Unmarshal([]byte(body), &entry)
+
+	var sizes = [8]int{
+		len(entry.Botrec),
+		len(entry.Network),
+		len(entry.Bot),
+		len(entry.Channel),
+		len(entry.Packnum),
+		len(entry.Gets),
+		len(entry.Fsize),
+		len(entry.Fname)}
+
+	var length = sizes[0]
+	for _, l := range sizes {
+		if length != l {
+			log.Fatalf("Parse Error, not all fields have the same size")
+			return nil, errors.New("Parse Error, not all fields have the same size")
+		}
+	}
+
+	fileInfos := make([]XdccFileInfo, 0)
+
+	type XdccFileInfo struct {
+		Network string
+		Channel string
+		BotName string
+		Name    string
+		Url     string
+		Size    int64
+		Slot    int
+	}
+
+	for i := 0; i < len(entry.Botrec); i++ {
+
+		var fields = []string{
+			entry.Botrec[i],
+			entry.Network[i],
+			entry.Bot[i],
+			entry.Channel[i],
+			entry.Packnum[i],
+			entry.Gets[i],
+			entry.Fsize[i],
+			entry.Fname[i]}
+
+		info, err := p.parseFields(fields)
+		if err == nil {
+			fileInfos = append(fileInfos, *info)
+		}
+	}
+
 	return fileInfos, nil
 }
