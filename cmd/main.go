@@ -10,14 +10,16 @@ import (
 	"strings"
 	"sync"
 	xdcc "xdcc-cli"
+	"xdcc-cli/search"
 )
 
-var registry *xdcc.XdccProviderRegistry = nil
+var registry *search.ProviderAggregator
 
 func init() {
-	registry = xdcc.NewProviderRegistry()
-	registry.AddProvider(&xdcc.XdccEuProvider{})
-	registry.AddProvider(&xdcc.SunXdccProvider{})
+	registry = search.NewProviderAggregator(
+		&search.XdccEuProvider{},
+		&search.SunXdccProvider{},
+	)
 }
 
 var defaultColWidths []int = []int{100, 10, -1}
@@ -34,12 +36,12 @@ func formatSize(size int64) string {
 		return "--"
 	}
 
-	if size >= xdcc.GigaByte {
-		return FloatToString(float64(size)/float64(xdcc.GigaByte)) + "GB"
-	} else if size >= xdcc.MegaByte {
-		return FloatToString(float64(size)/float64(xdcc.MegaByte)) + "MB"
-	} else if size >= xdcc.KiloByte {
-		return FloatToString(float64(size)/float64(xdcc.KiloByte)) + "KB"
+	if size >= search.GigaByte {
+		return FloatToString(float64(size)/float64(search.GigaByte)) + "GB"
+	} else if size >= search.MegaByte {
+		return FloatToString(float64(size)/float64(search.MegaByte)) + "MB"
+	} else if size >= search.KiloByte {
+		return FloatToString(float64(size)/float64(search.KiloByte)) + "KB"
 	}
 	return FloatToString(float64(size)) + "B"
 }
