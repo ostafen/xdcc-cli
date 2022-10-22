@@ -9,23 +9,22 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"xdcc-cli/pb"
+	"xdcc-cli/search"
+	table "xdcc-cli/table"
+	xdcc "xdcc-cli/xdcc"
 )
 
-var registry *XdccProviderRegistry = nil
+var searchEngine *search.ProviderAggregator
 
 func init() {
-	registry = NewProviderRegistry()
-	registry.AddProvider(&XdccEuProvider{})
-	registry.AddProvider(&SunXdccProvider{})
+	searchEngine = search.NewProviderAggregator(
+		&search.XdccEuProvider{},
+		&search.SunXdccProvider{},
+	)
 }
 
 var defaultColWidths []int = []int{100, 10, -1}
-
-const (
-	KiloByte = 1024
-	MegaByte = KiloByte * 1024
-	GigaByte = MegaByte * 1024
-)
 
 func FloatToString(value float64) string {
 	if value-float64(int64(value)) > 0 {
@@ -39,12 +38,12 @@ func formatSize(size int64) string {
 		return "--"
 	}
 
-	if size >= GigaByte {
-		return FloatToString(float64(size)/float64(GigaByte)) + "GB"
-	} else if size >= MegaByte {
-		return FloatToString(float64(size)/float64(MegaByte)) + "MB"
-	} else if size >= KiloByte {
-		return FloatToString(float64(size)/float64(KiloByte)) + "KB"
+	if size >= search.GigaByte {
+		return FloatToString(float64(size)/float64(search.GigaByte)) + "GB"
+	} else if size >= search.MegaByte {
+		return FloatToString(float64(size)/float64(search.MegaByte)) + "MB"
+	} else if size >= search.KiloByte {
+		return FloatToString(float64(size)/float64(search.KiloByte)) + "KB"
 	}
 	return FloatToString(float64(size)) + "B"
 }
@@ -55,7 +54,7 @@ func searchCommand(args []string) {
 
 	args = parseFlags(searchCmd, args)
 
-	printer := NewTablePrinter([]string{"File Name", "Size", "URL"})
+	printer := table.NewTablePrinter([]string{"File Name", "Size", "URL"})
 	printer.SetMaxWidths(defaultColWidths)
 
 	if len(args) < 1 {
@@ -63,9 +62,9 @@ func searchCommand(args []string) {
 		os.Exit(1)
 	}
 
-	res, _ := registry.Search(args)
+	res, _ := searchEngine.Search(args)
 	for _, fileInfo := range res {
-		printer.AddRow(Row{fileInfo.Name, formatSize(fileInfo.Size), fileInfo.URL.String()})
+		printer.AddRow(table.Row{fileInfo.Name, formatSize(fileInfo.Size), fileInfo.URL.String()})
 	}
 
 	sortColumn := 2
@@ -77,22 +76,22 @@ func searchCommand(args []string) {
 	printer.Print()
 }
 
-func transferLoop(transfer *XdccTransfer) {
-	pb := NewProgressBar()
+func transferLoop(transfer *xdcc.XdccTransfer) {
+	bar := pb.NewProgressBar()
 
 	evts := transfer.PollEvents()
 	quit := false
 	for !quit {
 		e := <-evts
 		switch evtType := e.(type) {
-		case *TransferStartedEvent:
-			pb.SetTotal(int(evtType.FileSize))
-			pb.SetFileName(evtType.FileName)
-			pb.SetState(ProgressStateDownloading)
-		case *TransferProgessEvent:
-			pb.Increment(int(evtType.transferBytes))
-		case *TransferCompletedEvent:
-			pb.SetState(ProgressStateCompleted)
+		case *xdcc.TransferStartedEvent:
+			bar.SetTotal(int(evtType.FileSize))
+			bar.SetFileName(evtType.FileName)
+			bar.SetState(pb.ProgressStateDownloading)
+		case *xdcc.TransferProgessEvent:
+			bar.Increment(int(evtType.TransferBytes))
+		case *xdcc.TransferCompletedEvent:
+			bar.SetState(pb.ProgressStateCompleted)
 			quit = true
 		}
 	}
@@ -105,7 +104,7 @@ func suggestUnknownAuthoritySwitch(err error) {
 	}
 }
 
-func doTransfer(transfer *XdccTransfer) {
+func doTransfer(transfer *xdcc.XdccTransfer) {
 	err := transfer.Start()
 	if err != nil {
 		fmt.Println(err)
@@ -182,7 +181,7 @@ func getCommand(args []string) {
 	wg := sync.WaitGroup{}
 	for _, urlStr := range urlList {
 		if strings.HasPrefix(urlStr, "irc://") {
-			url, err := parseURL(urlStr)
+			url, err := xdcc.ParseURL(urlStr)
 
 			if err != nil {
 				fmt.Println(err.Error())
@@ -190,8 +189,8 @@ func getCommand(args []string) {
 			}
 
 			wg.Add(1)
-			transfer := NewXdccTransfer(*url, *path, !*noSSL, *skipCertificateCheck)
-			go func(transfer *XdccTransfer) {
+			transfer := xdcc.NewTransfer(*url, *path, !*noSSL, *skipCertificateCheck)
+			go func(transfer *xdcc.XdccTransfer) {
 				doTransfer(transfer)
 				wg.Done()
 			}(transfer)

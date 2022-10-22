@@ -22,20 +22,20 @@ Assuming you have the latest version of Go installed on your system, you can use
 ```bash 
 git clone https://github.com/ostafen/xdcc-cli.git
 cd xdcc-cli
-go build -o xdcc .
+go build -o xdcc-cli cmd/main.go
 ```
 
 ## Usage
 To initialize a file search, simply pass a list of keywords to the **search** subcommand like so:
 
 ```bash
-foo@bar:~$ xdcc search keyword1 keyword2 ...
+foo@bar:~$ xdcc-cli search keyword1 keyword2 ...
 ```
 
 For example, to search for the latest iso of ubuntu, you could simply write:
 
 ```bash
-foo@bar:~$ xdcc search ubuntu iso
+foo@bar:~$ xdcc-cli search ubuntu iso
 ```
 
 If the command succedeeds, a table, similar to the following, will be displayed:
@@ -49,7 +49,7 @@ A part from file details, each row will contain an **url** of the form irc://net
 To download one or more file, simply pass a list of url to the **get** subcommand like so:
 
 ```bash
-foo@bar:~$ xdcc get url1 url2 ... [-o /path/to/an/output/directory]
+foo@bar:~$ xdcc-cli get url1 url2 ... [-o /path/to/an/output/directory]
 ```
 Alternatively, you could also specify a .txt input file, containing a list of urls (one for each line), using the **-i** switch.
 

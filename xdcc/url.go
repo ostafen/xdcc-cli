@@ -1,4 +1,4 @@
-package main
+package xdcc
 
 import (
 	"errors"
@@ -30,7 +30,7 @@ func parseSlot(slotStr string) (int, error) {
 }
 
 // url has the following format: irc://network/channel/bot/slot
-func parseURL(url string) (*IRCFile, error) {
+func ParseURL(url string) (*IRCFile, error) {
 	if !strings.HasPrefix(url, "irc://") {
 		return nil, errors.New("not an IRC url")
 	}

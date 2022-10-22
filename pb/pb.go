@@ -1,7 +1,8 @@
-package main
+package pb
 
 import (
 	"time"
+	"xdcc-cli/util"
 
 	"github.com/vbauerster/mpb/v7"
 	"github.com/vbauerster/mpb/v7/decor"
@@ -38,7 +39,7 @@ const (
 )
 
 func createMpbBar(p *mpb.Progress, total int, taskName string, state ProgressState, queueBar *mpb.Bar) *mpb.Bar {
-	displayName := cutStr(taskName, barMaxFileNameWidth)
+	displayName := util.CutStr(taskName, barMaxFileNameWidth)
 
 	len := len(displayName)
 	if len != 0 {

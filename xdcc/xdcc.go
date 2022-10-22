@@ -1,4 +1,4 @@
-package main
+package xdcc
 
 import (
 	"bufio"
@@ -136,7 +136,7 @@ type XdccTransfer struct {
 	events       chan TransferEvent
 }
 
-func NewXdccTransfer(url IRCFile, filePath string, enableSSL bool, skipCertificateCheck bool) *XdccTransfer {
+func NewTransfer(url IRCFile, filePath string, enableSSL bool, skipCertificateCheck bool) *XdccTransfer {
 	rand.Seed(time.Now().UTC().UnixNano())
 	nick := IRCClientUserName + strconv.Itoa(int(rand.Uint32()))
 
@@ -223,8 +223,8 @@ func (transfer *XdccTransfer) PollEvents() chan TransferEvent {
 }
 
 type TransferProgessEvent struct {
-	transferBytes uint64
-	transferRate  float32
+	TransferBytes uint64
+	TransferRate  float32
 }
 
 const downloadBufSize = 1024
@@ -302,8 +302,8 @@ func (transfer *XdccTransfer) handleXdccSendRes(send *XdccSendRes) {
 
 		reader := NewSpeedMonitorReader(conn, func(dowloadedAmount int, speed float64) {
 			transfer.notifyEvent(&TransferProgessEvent{
-				transferRate:  float32(speed),
-				transferBytes: uint64(dowloadedAmount),
+				TransferRate:  float32(speed),
+				TransferBytes: uint64(dowloadedAmount),
 			})
 		})
 
