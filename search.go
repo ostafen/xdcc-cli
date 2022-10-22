@@ -135,7 +135,7 @@ func (p *XdccEuProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, errors.New(fmt.Sprintf("status code error: %d %s", res.StatusCode, res.Status))
+		return nil, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
 	// Load the HTML document
@@ -169,13 +169,14 @@ func (p *XdccEuProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 	return fileInfos, nil
 }
 
+const (
+	SunXdccURL             = "http://sunxdcc.com/deliver.php"
+	SunXdccNumberOfEntries = 8
+)
+
 type SunXdccProvider struct{}
 
-const SunXdccURL = "http://sunxdcc.com/deliver.php"
-
-const SunXdccNumberOfEntries = 8
-
-func (p *SunXdccProvider) parseFields(entry SunXdccEntry, index int) (*XdccFileInfo, error) {
+func (p *SunXdccProvider) parseFields(entry *SunXdccEntry, index int) (*XdccFileInfo, error) {
 
 	fInfo := &XdccFileInfo{}
 	fInfo.Network = entry.Network[index]
@@ -219,7 +220,7 @@ type SunXdccEntry struct {
 func (p *SunXdccProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 	keywordString := strings.Join(keywords, " ")
 	searchkey := strings.Join(strings.Fields(keywordString), "+")
-	// for API definition use https://sunxdcc.com/#api
+	// see https://sunxdcc.com/#api for API definition
 	res, err := http.Get(SunXdccURL + "?sterm=" + searchkey)
 
 	if err != nil {
@@ -229,18 +230,30 @@ func (p *SunXdccProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, errors.New(fmt.Sprintf("status code error: %d %s", res.StatusCode, res.Status))
+		return nil, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
 	}
 
-	// Load the JSON Response document
-
-	var entry SunXdccEntry
-	decoder := json.NewDecoder(res.Body)
-	if err := decoder.Decode(&entry); err != nil {
+	entry, err := p.parseResponse(res)
+	if err != nil {
 		return nil, err
 	}
 
-	var sizes = [8]int{
+	if !p.validateResult(entry) {
+		return nil, fmt.Errorf("Parse Error, not all fields have the same size")
+	}
+
+	fileInfos := make([]XdccFileInfo, 0)
+	for i := 0; i < len(entry.Botrec); i++ {
+		info, err := p.parseFields(entry, i)
+		if err == nil {
+			fileInfos = append(fileInfos, *info)
+		}
+	}
+	return fileInfos, nil
+}
+
+func (*SunXdccProvider) validateResult(entry *SunXdccEntry) bool {
+	sizes := [8]int{
 		len(entry.Botrec),
 		len(entry.Network),
 		len(entry.Bot),
@@ -248,25 +261,21 @@ func (p *SunXdccProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 		len(entry.Packnum),
 		len(entry.Gets),
 		len(entry.Fsize),
-		len(entry.Fname)}
+		len(entry.Fname),
+	}
 
-	var length = sizes[0]
+	length := sizes[0]
 	for _, l := range sizes {
 		if length != l {
-			log.Fatalf("Parse Error, not all fields have the same size")
-			return nil, errors.New("Parse Error, not all fields have the same size")
+			return false
 		}
 	}
+	return true
+}
 
-	fileInfos := make([]XdccFileInfo, 0)
-
-	for i := 0; i < len(entry.Botrec); i++ {
-
-		info, err := p.parseFields(entry, i)
-		if err == nil {
-			fileInfos = append(fileInfos, *info)
-		}
-	}
-
-	return fileInfos, nil
+func (*SunXdccProvider) parseResponse(res *http.Response) (*SunXdccEntry, error) {
+	entry := &SunXdccEntry{}
+	decoder := json.NewDecoder(res.Body)
+	err := decoder.Decode(entry)
+	return entry, err
 }
