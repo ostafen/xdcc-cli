@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strconv"
 	"sync"
-	"xdcc-cli"
+	"xdcc-cli/xdcc"
 )
 
 type XdccFileInfo struct {

@@ -1,9 +1,10 @@
-package xdcc
+package table
 
 import (
 	"fmt"
 	"sort"
 	"strings"
+	"xdcc-cli/util"
 )
 
 type Row []string
@@ -33,15 +34,8 @@ func centerString(s string, width int) string {
 	return strings.Repeat(" ", leftPadding) + s + strings.Repeat(" ", rightPadding)
 }
 
-func cutStr(s string, maxSize int) string {
-	if len(s) <= maxSize {
-		return s
-	}
-	return s[:maxSize-3] + "..."
-}
-
 func formatStr(s string, maxSize int) string {
-	return centerString(cutStr(s, maxSize), maxSize)
+	return centerString(util.CutStr(s, maxSize), maxSize)
 }
 
 const paddingDefault = 2

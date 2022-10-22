@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"xdcc-cli"
+	"xdcc-cli/xdcc"
 
 	"github.com/PuerkitoBio/goquery"
 )

@@ -9,8 +9,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	xdcc "xdcc-cli"
+	"xdcc-cli/pb"
 	"xdcc-cli/search"
+	table "xdcc-cli/table"
+	xdcc "xdcc-cli/xdcc"
 )
 
 var searchEngine *search.ProviderAggregator
@@ -52,7 +54,7 @@ func searchCommand(args []string) {
 
 	args = parseFlags(searchCmd, args)
 
-	printer := xdcc.NewTablePrinter([]string{"File Name", "Size", "URL"})
+	printer := table.NewTablePrinter([]string{"File Name", "Size", "URL"})
 	printer.SetMaxWidths(defaultColWidths)
 
 	if len(args) < 1 {
@@ -62,7 +64,7 @@ func searchCommand(args []string) {
 
 	res, _ := searchEngine.Search(args)
 	for _, fileInfo := range res {
-		printer.AddRow(xdcc.Row{fileInfo.Name, formatSize(fileInfo.Size), fileInfo.URL.String()})
+		printer.AddRow(table.Row{fileInfo.Name, formatSize(fileInfo.Size), fileInfo.URL.String()})
 	}
 
 	sortColumn := 2
@@ -75,7 +77,7 @@ func searchCommand(args []string) {
 }
 
 func transferLoop(transfer *xdcc.XdccTransfer) {
-	pb := xdcc.NewProgressBar()
+	bar := pb.NewProgressBar()
 
 	evts := transfer.PollEvents()
 	quit := false
@@ -83,13 +85,13 @@ func transferLoop(transfer *xdcc.XdccTransfer) {
 		e := <-evts
 		switch evtType := e.(type) {
 		case *xdcc.TransferStartedEvent:
-			pb.SetTotal(int(evtType.FileSize))
-			pb.SetFileName(evtType.FileName)
-			pb.SetState(xdcc.ProgressStateDownloading)
+			bar.SetTotal(int(evtType.FileSize))
+			bar.SetFileName(evtType.FileName)
+			bar.SetState(pb.ProgressStateDownloading)
 		case *xdcc.TransferProgessEvent:
-			pb.Increment(int(evtType.TransferBytes))
+			bar.Increment(int(evtType.TransferBytes))
 		case *xdcc.TransferCompletedEvent:
-			pb.SetState(xdcc.ProgressStateCompleted)
+			bar.SetState(pb.ProgressStateCompleted)
 			quit = true
 		}
 	}
