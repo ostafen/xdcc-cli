@@ -1,4 +1,4 @@
-package main
+package xdcc
 
 import (
 	"encoding/json"
@@ -73,6 +73,12 @@ func (registry *XdccProviderRegistry) Search(keywords []string) ([]XdccFileInfo,
 	}
 	return results, nil
 }
+
+const (
+	KiloByte = 1024
+	MegaByte = KiloByte * 1024
+	GigaByte = MegaByte * 1024
+)
 
 func parseFileSize(sizeStr string) (int64, error) {
 	if len(sizeStr) == 0 {
@@ -168,7 +174,7 @@ func (p *XdccEuProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 
 		info, err := p.parseFields(fields)
 		if err == nil {
-			url, err := parseURL(urlStr + "/" + info.URL.UserName + "/" + strconv.Itoa(info.Slot))
+			url, err := ParseURL(urlStr + "/" + info.URL.UserName + "/" + strconv.Itoa(info.Slot))
 			if err == nil {
 				info.URL = *url
 				fileInfos = append(fileInfos, *info)
