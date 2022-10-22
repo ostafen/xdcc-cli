@@ -13,10 +13,10 @@ import (
 	"xdcc-cli/search"
 )
 
-var registry *search.ProviderAggregator
+var searchEngine *search.ProviderAggregator
 
 func init() {
-	registry = search.NewProviderAggregator(
+	searchEngine = search.NewProviderAggregator(
 		&search.XdccEuProvider{},
 		&search.SunXdccProvider{},
 	)
@@ -60,7 +60,7 @@ func searchCommand(args []string) {
 		os.Exit(1)
 	}
 
-	res, _ := registry.Search(args)
+	res, _ := searchEngine.Search(args)
 	for _, fileInfo := range res {
 		printer.AddRow(xdcc.Row{fileInfo.Name, formatSize(fileInfo.Size), fileInfo.URL.String()})
 	}

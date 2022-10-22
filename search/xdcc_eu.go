@@ -3,7 +3,6 @@ package search
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,9 +13,10 @@ import (
 
 type XdccEuProvider struct{}
 
-const XdccEuURL = "https://www.xdcc.eu/search.php"
-
-const xdccEuNumberOfEntries = 7
+const (
+	xdccEuURL             = "https://www.xdcc.eu/search.php"
+	xdccEuNumberOfEntries = 7
+)
 
 func (p *XdccEuProvider) parseFields(fields []string) (*XdccFileInfo, error) {
 	if len(fields) != xdccEuNumberOfEntries {
@@ -35,7 +35,6 @@ func (p *XdccEuProvider) parseFields(fields []string) (*XdccFileInfo, error) {
 	fInfo.Size, _ = parseFileSize(fields[5]) // ignoring error
 
 	fInfo.Name = fields[6]
-
 	if err != nil {
 		return nil, err
 	}
@@ -47,10 +46,8 @@ func (p *XdccEuProvider) parseFields(fields []string) (*XdccFileInfo, error) {
 func (p *XdccEuProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 	keywordString := strings.Join(keywords, " ")
 	searchkey := strings.Join(strings.Fields(keywordString), "+")
-	res, err := http.Get(XdccEuURL + "?searchkey=" + searchkey)
-
+	res, err := http.Get(xdccEuURL + "?searchkey=" + searchkey)
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 
@@ -62,7 +59,6 @@ func (p *XdccEuProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 	// Load the HTML document
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
 	}
 

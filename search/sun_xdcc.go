@@ -3,27 +3,25 @@ package search
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 )
 
 const (
-	SunXdccURL             = "http://sunxdcc.com/deliver.php"
-	SunXdccNumberOfEntries = 8
+	sunXdccURL             = "http://sunxdcc.com/deliver.php"
+	sunXdccNumberOfEntries = 8
 )
 
 type SunXdccProvider struct{}
 
-func (p *SunXdccProvider) parseFields(entry *SunXdccEntry, index int) (*XdccFileInfo, error) {
+func (p *SunXdccProvider) parseResponseEntry(entry *SunXdccResponse, index int) (*XdccFileInfo, error) {
 	info := &XdccFileInfo{}
 	info.URL.Network = entry.Network[index]
 	info.URL.UserName = entry.Bot[index]
 	info.URL.Channel = entry.Channel[index]
 
 	slot, err := strconv.Atoi(entry.Packnum[index][1:])
-
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +38,7 @@ func (p *SunXdccProvider) parseFields(entry *SunXdccEntry, index int) (*XdccFile
 	return info, nil
 }
 
-type SunXdccEntry struct {
+type SunXdccResponse struct {
 	Botrec  []string
 	Network []string
 	Bot     []string
@@ -55,30 +53,31 @@ func (p *SunXdccProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 	keywordString := strings.Join(keywords, " ")
 	searchkey := strings.Join(strings.Fields(keywordString), "+")
 	// see https://sunxdcc.com/#api for API definition
-	res, err := http.Get(SunXdccURL + "?sterm=" + searchkey)
-
-	if err != nil {
-		log.Fatal(err)
-		return nil, err
-	}
-
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status code error: %d %s", res.StatusCode, res.Status)
-	}
-
-	entry, err := p.parseResponse(res)
+	httpResp, err := http.Get(sunXdccURL + "?sterm=" + searchkey)
 	if err != nil {
 		return nil, err
 	}
 
-	if !p.validateResult(entry) {
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status code error: %d %s", httpResp.StatusCode, httpResp.Status)
+	}
+
+	resp, err := p.parseResponse(httpResp)
+	if err != nil {
+		return nil, err
+	}
+
+	if !p.validateResult(resp) {
 		return nil, fmt.Errorf("parse Error, not all fields have the same size")
 	}
+	return p.parseResults(resp)
+}
 
+func (p *SunXdccProvider) parseResults(resp *SunXdccResponse) ([]XdccFileInfo, error) {
 	fileInfos := make([]XdccFileInfo, 0)
-	for i := 0; i < len(entry.Botrec); i++ {
-		info, err := p.parseFields(entry, i)
+	for i := 0; i < len(resp.Botrec); i++ {
+		info, err := p.parseResponseEntry(resp, i)
 		if err == nil {
 			fileInfos = append(fileInfos, *info)
 		}
@@ -86,7 +85,7 @@ func (p *SunXdccProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 	return fileInfos, nil
 }
 
-func (*SunXdccProvider) validateResult(entry *SunXdccEntry) bool {
+func (*SunXdccProvider) validateResult(entry *SunXdccResponse) bool {
 	sizes := [8]int{
 		len(entry.Botrec),
 		len(entry.Network),
@@ -107,8 +106,8 @@ func (*SunXdccProvider) validateResult(entry *SunXdccEntry) bool {
 	return true
 }
 
-func (*SunXdccProvider) parseResponse(res *http.Response) (*SunXdccEntry, error) {
-	entry := &SunXdccEntry{}
+func (*SunXdccProvider) parseResponse(res *http.Response) (*SunXdccResponse, error) {
+	entry := &SunXdccResponse{}
 	decoder := json.NewDecoder(res.Body)
 	err := decoder.Decode(entry)
 	return entry, err
