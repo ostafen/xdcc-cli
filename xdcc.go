@@ -129,14 +129,14 @@ const maxConnAttempts = 5
 
 type XdccTransfer struct {
 	filePath     string
-	url          IRCFileURL
+	url          IRCFile
 	conn         *irc.Conn
 	connAttempts int
 	started      bool
 	events       chan TransferEvent
 }
 
-func NewXdccTransfer(url IRCFileURL, filePath string, enableSSL bool, skipCertificateCheck bool) *XdccTransfer {
+func NewXdccTransfer(url IRCFile, filePath string, enableSSL bool, skipCertificateCheck bool) *XdccTransfer {
 	rand.Seed(time.Now().UTC().UnixNano())
 	nick := IRCClientUserName + strconv.Itoa(int(rand.Uint32()))
 

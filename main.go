@@ -65,12 +65,15 @@ func searchCommand(args []string) {
 
 	res, _ := registry.Search(args)
 	for _, fileInfo := range res {
-		printer.AddRow(Row{fileInfo.Name, formatSize(fileInfo.Size), fileInfo.Url})
+		printer.AddRow(Row{fileInfo.Name, formatSize(fileInfo.Size), fileInfo.URL.String()})
 	}
 
+	sortColumn := 2
 	if *sortByFilename {
-		printer.SortByColumn(0)
+		sortColumn = 0
 	}
+	printer.SortByColumn(sortColumn)
+
 	printer.Print()
 }
 
@@ -104,7 +107,6 @@ func suggestUnknownAuthoritySwitch(err error) {
 
 func doTransfer(transfer *XdccTransfer) {
 	err := transfer.Start()
-
 	if err != nil {
 		fmt.Println(err)
 		suggestUnknownAuthoritySwitch(err)
@@ -180,7 +182,7 @@ func getCommand(args []string) {
 	wg := sync.WaitGroup{}
 	for _, urlStr := range urlList {
 		if strings.HasPrefix(urlStr, "irc://") {
-			url, err := parseIRCFileURl(urlStr)
+			url, err := parseURL(urlStr)
 
 			if err != nil {
 				fmt.Println(err.Error())

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-type IRCFileURL struct {
+type IRCFile struct {
 	Network  string
 	Channel  string
 	UserName string
@@ -29,8 +29,8 @@ func parseSlot(slotStr string) (int, error) {
 	return strconv.Atoi(slotStr)
 }
 
-// url has the following format: irc://network/channel/bot/#slot
-func parseIRCFileURl(url string) (*IRCFileURL, error) {
+// url has the following format: irc://network/channel/bot/slot
+func parseURL(url string) (*IRCFile, error) {
 	if !strings.HasPrefix(url, "irc://") {
 		return nil, errors.New("not an IRC url")
 	}
@@ -45,7 +45,7 @@ func parseIRCFileURl(url string) (*IRCFileURL, error) {
 		return nil, err
 	}
 
-	fileUrl := &IRCFileURL{
+	fileUrl := &IRCFile{
 		Network:  fields[0],
 		Channel:  fields[1],
 		UserName: fields[2],
@@ -58,10 +58,10 @@ func parseIRCFileURl(url string) (*IRCFileURL, error) {
 	return fileUrl, nil
 }
 
-func (url *IRCFileURL) GetBot() IRCBot {
+func (url *IRCFile) GetBot() IRCBot {
 	return IRCBot{Network: url.Network, Channel: url.Channel, Name: url.UserName}
 }
 
-func (url *IRCFileURL) String() string {
-	return fmt.Sprintf("irc://%s/%s/%s/#%d", url.Network, url.Channel, url.UserName, url.Slot)
+func (url *IRCFile) String() string {
+	return fmt.Sprintf("irc://%s/%s/%s/%d", url.Network, url.Channel, url.UserName, url.Slot)
 }

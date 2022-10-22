@@ -14,13 +14,10 @@ import (
 )
 
 type XdccFileInfo struct {
-	Network string
-	Channel string
-	BotName string
-	Name    string
-	Url     string
-	Size    int64
-	Slot    int
+	URL  IRCFile
+	Name string
+	Size int64
+	Slot int
 }
 
 type XdccSearchProvider interface {
@@ -46,25 +43,35 @@ func (registry *XdccProviderRegistry) AddProvider(provider XdccSearchProvider) {
 const MaxResults = 1024
 
 func (registry *XdccProviderRegistry) Search(keywords []string) ([]XdccFileInfo, error) {
-	allResults := make([]XdccFileInfo, 0, MaxResults)
+	allResults := make(map[IRCFile]XdccFileInfo)
+
+	mtx := sync.Mutex{}
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(registry.providerList))
 	for _, p := range registry.providerList {
 		go func(p XdccSearchProvider) {
-			res, err := p.Search(keywords)
-
+			resList, err := p.Search(keywords)
 			if err != nil {
 				return
 			}
 
-			allResults = append(allResults, res...)
+			mtx.Lock()
+			for _, res := range resList {
+				allResults[res.URL] = res
+			}
+			mtx.Unlock()
 
 			wg.Done()
 		}(p)
 	}
 	wg.Wait()
-	return allResults, nil
+
+	results := make([]XdccFileInfo, 0, MaxResults)
+	for _, res := range allResults {
+		results = append(results, res)
+	}
+	return results, nil
 }
 
 func parseFileSize(sizeStr string) (int64, error) {
@@ -102,11 +109,10 @@ func (p *XdccEuProvider) parseFields(fields []string) (*XdccFileInfo, error) {
 	}
 
 	fInfo := &XdccFileInfo{}
-	fInfo.Network = fields[0]
-	fInfo.Channel = fields[1]
-	fInfo.BotName = fields[2]
+	fInfo.URL.Network = fields[0]
+	fInfo.URL.Channel = fields[1]
+	fInfo.URL.UserName = fields[2]
 	slot, err := strconv.Atoi(fields[3][1:])
-
 	if err != nil {
 		return nil, err
 	}
@@ -149,12 +155,12 @@ func (p *XdccEuProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 	doc.Find("tr").Each(func(_ int, s *goquery.Selection) {
 		fields := make([]string, 0)
 
-		var url string
+		var urlStr string
 		s.Children().Each(func(i int, si *goquery.Selection) {
 			if i == 1 {
 				value, exists := si.Find("a").First().Attr("href")
 				if exists {
-					url = value
+					urlStr = value
 				}
 			}
 			fields = append(fields, strings.TrimSpace(si.Text()))
@@ -162,8 +168,11 @@ func (p *XdccEuProvider) Search(keywords []string) ([]XdccFileInfo, error) {
 
 		info, err := p.parseFields(fields)
 		if err == nil {
-			info.Url = url + "/" + info.BotName + "/" + strconv.Itoa(info.Slot)
-			fileInfos = append(fileInfos, *info)
+			url, err := parseURL(urlStr + "/" + info.URL.UserName + "/" + strconv.Itoa(info.Slot))
+			if err == nil {
+				info.URL = *url
+				fileInfos = append(fileInfos, *info)
+			}
 		}
 	})
 	return fileInfos, nil
@@ -177,11 +186,10 @@ const (
 type SunXdccProvider struct{}
 
 func (p *SunXdccProvider) parseFields(entry *SunXdccEntry, index int) (*XdccFileInfo, error) {
-
-	fInfo := &XdccFileInfo{}
-	fInfo.Network = entry.Network[index]
-	fInfo.BotName = entry.Bot[index]
-	fInfo.Channel = entry.Channel[index]
+	info := &XdccFileInfo{}
+	info.URL.Network = entry.Network[index]
+	info.URL.UserName = entry.Bot[index]
+	info.URL.Channel = entry.Channel[index]
 
 	slot, err := strconv.Atoi(entry.Packnum[index][1:])
 
@@ -191,19 +199,14 @@ func (p *SunXdccProvider) parseFields(entry *SunXdccEntry, index int) (*XdccFile
 
 	sizeString := strings.TrimLeft(strings.TrimRight(entry.Fsize[index], "]"), "[")
 
-	fInfo.Size, _ = parseFileSize(sizeString) // ignoring error
-
-	fInfo.Name = entry.Fname[index]
-
+	info.Size, _ = parseFileSize(sizeString) // ignoring error
+	info.Name = entry.Fname[index]
 	if err != nil {
 		return nil, err
 	}
 
-	fInfo.Slot = slot
-
-	fInfo.Url = "irc://" + fInfo.Network + "/" + strings.TrimLeft(fInfo.Channel, "#") + "/" + fInfo.BotName + "/" + strconv.Itoa(fInfo.Slot)
-
-	return fInfo, nil
+	info.Slot = slot
+	return info, nil
 }
 
 type SunXdccEntry struct {
