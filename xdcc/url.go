@@ -29,15 +29,17 @@ func parseSlot(slotStr string) (int, error) {
 	return strconv.Atoi(slotStr)
 }
 
+var ErrInvalidURL = errors.New("invalid IRC url")
+
 // url has the following format: irc://network/channel/bot/slot
 func ParseURL(url string) (*IRCFile, error) {
 	if !strings.HasPrefix(url, "irc://") {
-		return nil, errors.New("not an IRC url")
+		return nil, ErrInvalidURL
 	}
 
 	fields := strings.Split(strings.TrimPrefix(url, "irc://"), "/")
 	if len(fields) != ircFileURLFields {
-		return nil, errors.New("invalid IRC url")
+		return nil, ErrInvalidURL
 	}
 
 	slot, err := parseSlot(fields[3])

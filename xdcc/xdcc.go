@@ -127,6 +127,37 @@ type TransferAbortedEvent struct {
 
 const maxConnAttempts = 5
 
+type Transfer interface {
+	Start() error
+	PollEvents() chan TransferEvent
+}
+
+type retryTransfer struct {
+	*XdccTransfer
+	conf Config
+}
+
+func (t *retryTransfer) Start() error {
+	t1 := newXdccTransfer(t.conf, true, false)
+	if err := t1.conn.Connect(); err == nil {
+		t.XdccTransfer = t1
+		return nil
+	}
+
+	t2 := newXdccTransfer(t.conf, true, true)
+	if err := t1.conn.Connect(); err == nil {
+		t.XdccTransfer = t2
+		return nil
+	}
+
+	t.XdccTransfer = newXdccTransfer(t.conf, false, false)
+	return t.XdccTransfer.conn.Connect()
+}
+
+func (t *retryTransfer) PollEvents() chan TransferEvent {
+	return t.XdccTransfer.PollEvents()
+}
+
 type XdccTransfer struct {
 	filePath     string
 	url          IRCFile
@@ -136,14 +167,32 @@ type XdccTransfer struct {
 	events       chan TransferEvent
 }
 
-func NewTransfer(url IRCFile, filePath string, enableSSL bool, skipCertificateCheck bool) *XdccTransfer {
+type Config struct {
+	File    IRCFile
+	OutPath string
+	SSLOnly bool
+}
+
+func NewTransfer(c Config) Transfer {
+	if c.SSLOnly {
+		return newXdccTransfer(c, true, false)
+	}
+
+	return &retryTransfer{
+		conf: c,
+	}
+}
+
+func newXdccTransfer(c Config, enableSSL bool, skipCertificateCheck bool) *XdccTransfer {
 	rand.Seed(time.Now().UTC().UnixNano())
 	nick := IRCClientUserName + strconv.Itoa(int(rand.Uint32()))
 
+	file := c.File
+
 	config := irc.NewConfig(nick)
 	config.SSL = enableSSL
-	config.SSLConfig = &tls.Config{ServerName: url.Network, InsecureSkipVerify: skipCertificateCheck}
-	config.Server = url.Network
+	config.SSLConfig = &tls.Config{ServerName: file.Network, InsecureSkipVerify: skipCertificateCheck}
+	config.Server = file.Network
 	config.NewNick = func(nick string) string {
 		return nick + "" + strconv.Itoa(int(rand.Uint32()))
 	}
@@ -152,13 +201,13 @@ func NewTransfer(url IRCFile, filePath string, enableSSL bool, skipCertificateCh
 
 	t := &XdccTransfer{
 		conn:         conn,
-		url:          url,
-		filePath:     filePath,
+		url:          file,
+		filePath:     c.OutPath,
 		started:      false,
 		connAttempts: 0,
 		events:       make(chan TransferEvent, defaultEventChanSize),
 	}
-	t.setupHandlers(url.Channel, url.UserName, url.Slot)
+	t.setupHandlers(file.Channel, file.UserName, file.Slot)
 	return t
 }
 
@@ -211,7 +260,7 @@ func (transfer *XdccTransfer) setupHandlers(channel string, userName string, slo
 			}
 
 			if (err != nil || transfer.connAttempts >= maxConnAttempts) && !transfer.started {
-				transfer.notifyEvent(&TransferAbortedEvent{Error: "disconnected from server"})
+				transfer.notifyEvent(&TransferAbortedEvent{Error: err.Error()})
 			}
 
 			transfer.connAttempts++

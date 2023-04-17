@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"crypto/x509"
+	"errors"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -48,7 +50,7 @@ func formatSize(size int64) string {
 	return FloatToString(float64(size)) + "B"
 }
 
-func searchCommand(args []string) {
+func execSearch(args []string) {
 	searchCmd := flag.NewFlagSet("search", flag.ExitOnError)
 	sortByFilename := searchCmd.Bool("s", false, "sort results by filename")
 
@@ -76,7 +78,7 @@ func searchCommand(args []string) {
 	printer.Print()
 }
 
-func transferLoop(transfer *xdcc.XdccTransfer) {
+func transferLoop(transfer xdcc.Transfer) {
 	bar := pb.NewProgressBar()
 
 	evts := transfer.PollEvents()
@@ -104,7 +106,7 @@ func suggestUnknownAuthoritySwitch(err error) {
 	}
 }
 
-func doTransfer(transfer *xdcc.XdccTransfer) {
+func doTransfer(transfer xdcc.Transfer) {
 	err := transfer.Start()
 	if err != nil {
 		fmt.Println(err)
@@ -116,20 +118,21 @@ func doTransfer(transfer *xdcc.XdccTransfer) {
 }
 
 func parseFlags(flagSet *flag.FlagSet, args []string) []string {
-	findFirstFlag := func(args []string) int {
-		for i, arg := range args {
-			if strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
-				return i
-			}
-		}
-		return -1
-	}
 	flagIdx := findFirstFlag(args)
-	if flagIdx >= 0 {
-		flagSet.Parse(args[flagIdx:])
-		return args[:flagIdx]
+	if flagIdx < 0 {
+		return args
 	}
-	return args
+	flagSet.Parse(args[flagIdx:])
+	return args[:flagIdx]
+}
+
+func findFirstFlag(args []string) int {
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "--") {
+			return i
+		}
+	}
+	return -1
 }
 
 func loadUrlListFile(filePath string) []string {
@@ -156,17 +159,17 @@ func loadUrlListFile(filePath string) []string {
 }
 
 func printGetUsageAndExit(flagSet *flag.FlagSet) {
-	fmt.Printf("usage: get url1 url2 ... [-o path] [-i file] [--allow-unknown-authority]\n\nFlag set:\n")
+	fmt.Printf("usage: get url1 url2 ... [-o path] [-i file] [--ssl-only]\n\nFlag set:\n")
 	flagSet.PrintDefaults()
 	os.Exit(0)
 }
 
-func getCommand(args []string) {
+func execGet(args []string) {
 	getCmd := flag.NewFlagSet("get", flag.ExitOnError)
 	path := getCmd.String("o", ".", "output folder of dowloaded file")
 	inputFile := getCmd.String("i", "", "input file containing a list of urls")
-	skipCertificateCheck := getCmd.Bool("allow-unknown-authority", false, "skip x509 certificate check during tls connection")
-	noSSL := getCmd.Bool("no-ssl", false, "disable SSL.")
+
+	sslOnly := getCmd.Bool("ssl-only", false, "force the client to use TSL connection")
 
 	urlList := parseFlags(getCmd, args)
 
@@ -180,41 +183,45 @@ func getCommand(args []string) {
 
 	wg := sync.WaitGroup{}
 	for _, urlStr := range urlList {
-		if strings.HasPrefix(urlStr, "irc://") {
-			url, err := xdcc.ParseURL(urlStr)
-
-			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(1)
-			}
-
-			wg.Add(1)
-			transfer := xdcc.NewTransfer(*url, *path, !*noSSL, *skipCertificateCheck)
-			go func(transfer *xdcc.XdccTransfer) {
-				doTransfer(transfer)
-				wg.Done()
-			}(transfer)
-		} else {
-			fmt.Printf("no valid irc url %s\n", urlStr)
+		url, err := xdcc.ParseURL(urlStr)
+		if errors.Is(err, xdcc.ErrInvalidURL) {
+			log.Printf("no valid irc url: %s\n", urlStr)
+			continue
 		}
+
+		if err != nil {
+			log.Println(err.Error())
+			os.Exit(1)
+		}
+
+		transfer := xdcc.NewTransfer(xdcc.Config{
+			File:    *url,
+			OutPath: *path,
+			SSLOnly: *sslOnly,
+		})
+
+		wg.Add(1)
+		go func(transfer xdcc.Transfer) {
+			doTransfer(transfer)
+			wg.Done()
+		}(transfer)
 	}
 	wg.Wait()
 }
 
 func main() {
-
 	if len(os.Args) < 2 {
-		fmt.Println("one of the following subcommands is expected: [search, get]")
+		log.Println("one of the following subcommands is expected: [search, get]")
 		os.Exit(1)
 	}
 
 	switch os.Args[1] {
 	case "search":
-		searchCommand(os.Args[2:])
+		execSearch(os.Args[2:])
 	case "get":
-		getCommand(os.Args[2:])
+		execGet(os.Args[2:])
 	default:
-		fmt.Println("no such command: ", os.Args[1])
+		log.Println("no such command: ", os.Args[1])
 		os.Exit(1)
 	}
 }
