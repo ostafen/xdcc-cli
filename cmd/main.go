@@ -6,7 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -185,12 +184,12 @@ func execGet(args []string) {
 	for _, urlStr := range urlList {
 		url, err := xdcc.ParseURL(urlStr)
 		if errors.Is(err, xdcc.ErrInvalidURL) {
-			log.Printf("no valid irc url: %s\n", urlStr)
+			fmt.Printf("no valid irc url: %s\n", urlStr)
 			continue
 		}
 
 		if err != nil {
-			log.Println(err.Error())
+			fmt.Println(err.Error())
 			os.Exit(1)
 		}
 
@@ -211,7 +210,7 @@ func execGet(args []string) {
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Println("one of the following subcommands is expected: [search, get]")
+		fmt.Println("one of the following subcommands is expected: [search, get]")
 		os.Exit(1)
 	}
 
@@ -221,7 +220,7 @@ func main() {
 	case "get":
 		execGet(os.Args[2:])
 	default:
-		log.Println("no such command: ", os.Args[1])
+		fmt.Println("no such command: ", os.Args[1])
 		os.Exit(1)
 	}
 }
