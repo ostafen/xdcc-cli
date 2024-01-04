@@ -232,7 +232,7 @@ func (transfer *XdccTransfer) setupHandlers(channel string, userName string, slo
 	// send xdcc send on successfull join
 	conn.HandleFunc(irc.JOIN,
 		func(conn *irc.Conn, line *irc.Line) {
-			if line.Args[0] == channel && !transfer.started {
+			if strings.EqualFold(line.Args[0], channel) && !transfer.started {
 				transfer.send(&XdccSendReq{Slot: slot})
 			}
 		})
@@ -374,6 +374,7 @@ func (transfer *XdccTransfer) handleXdccSendRes(send *XdccSendRes) {
 
 			downloadedBytesTotal += n
 		}
+		fileWriter.Flush()
 
 		transfer.notifyEvent(&TransferCompletedEvent{})
 	}()
