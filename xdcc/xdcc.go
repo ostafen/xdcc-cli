@@ -374,6 +374,7 @@ func (transfer *XdccTransfer) handleXdccSendRes(send *XdccSendRes) {
 
 			downloadedBytesTotal += n
 		}
+		fileWriter.Flush()
 
 		transfer.notifyEvent(&TransferCompletedEvent{})
 	}()
