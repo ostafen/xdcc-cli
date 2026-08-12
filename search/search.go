@@ -45,6 +45,7 @@ func (registry *ProviderAggregator) Search(keywords []string) ([]XdccFileInfo, e
 	wg.Add(len(registry.providerList))
 	for _, p := range registry.providerList {
 		go func(p XdccSearchProvider) {
+			defer wg.Done()
 			resList, err := p.Search(keywords)
 			if err != nil {
 				return
@@ -55,8 +56,6 @@ func (registry *ProviderAggregator) Search(keywords []string) ([]XdccFileInfo, e
 				allResults[res.URL] = res
 			}
 			mtx.Unlock()
-
-			wg.Done()
 		}(p)
 	}
 	wg.Wait()
