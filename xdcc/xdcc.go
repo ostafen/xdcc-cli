@@ -51,6 +51,32 @@ func uint32ToIP(n int) net.IP {
 	return net.IPv4(a, b, c, d)
 }
 
+func splitCTCPFields(text string) []string {
+	var fields []string
+	inQuotes := false
+	current := strings.Builder{}
+
+	for _, r := range text {
+		switch r {
+		case '"':
+			inQuotes = !inQuotes
+		case ' ':
+			if inQuotes {
+				current.WriteRune(r)
+			} else if current.Len() > 0 {
+				fields = append(fields, current.String())
+				current.Reset()
+			}
+		default:
+			current.WriteRune(r)
+		}
+	}
+	if current.Len() > 0 {
+		fields = append(fields, current.String())
+	}
+	return fields
+}
+
 const XdccSendResArgs = 4
 
 func (send *XdccSendRes) Name() string {
@@ -91,7 +117,7 @@ const (
 )
 
 func parseCTCPRes(text string) (CTCPResponse, error) {
-	fields := strings.Fields(text)
+	fields := splitCTCPFields(text)
 
 	var resp CTCPResponse = nil
 
