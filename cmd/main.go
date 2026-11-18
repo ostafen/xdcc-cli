@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -77,12 +76,11 @@ func execSearch(args []string) {
 	printer.Print()
 }
 
-func transferLoop(transfer xdcc.Transfer) {
+func transferLoop(transfer xdcc.Transfer) error {
 	bar := pb.NewProgressBar()
 
 	evts := transfer.PollEvents()
-	quit := false
-	for !quit {
+	for {
 		e := <-evts
 		switch evtType := e.(type) {
 		case *xdcc.TransferStartedEvent:
@@ -93,27 +91,19 @@ func transferLoop(transfer xdcc.Transfer) {
 			bar.Increment(int(evtType.TransferBytes))
 		case *xdcc.TransferCompletedEvent:
 			bar.SetState(pb.ProgressStateCompleted)
-			quit = true
+			return nil
+		case *xdcc.TransferAbortedEvent:
+			bar.SetState(pb.ProgressStateAborted)
+			return errors.New(evtType.Error)
 		}
 	}
-	// TODO: do clean-up operations here
 }
 
-func suggestUnknownAuthoritySwitch(err error) {
-	if err.Error() == (x509.UnknownAuthorityError{}.Error()) {
-		fmt.Println("use the --allow-unknown-authority flag to skip certificate verification")
+func doTransfer(transfer xdcc.Transfer) error {
+	if err := transfer.Start(); err != nil {
+		return err
 	}
-}
-
-func doTransfer(transfer xdcc.Transfer) {
-	err := transfer.Start()
-	if err != nil {
-		fmt.Println(err)
-		suggestUnknownAuthoritySwitch(err)
-		return
-	}
-
-	transferLoop(transfer)
+	return transferLoop(transfer)
 }
 
 func parseFlags(flagSet *flag.FlagSet, args []string) []string {
@@ -180,7 +170,11 @@ func execGet(args []string) {
 		printGetUsageAndExit(getCmd)
 	}
 
-	wg := sync.WaitGroup{}
+	var (
+		wg           sync.WaitGroup
+		errMu        sync.Mutex
+		transferErrs []error
+	)
 	for _, urlStr := range urlList {
 		url, err := xdcc.ParseURL(urlStr)
 		if errors.Is(err, xdcc.ErrInvalidURL) {
@@ -201,11 +195,23 @@ func execGet(args []string) {
 
 		wg.Add(1)
 		go func(transfer xdcc.Transfer) {
-			doTransfer(transfer)
-			wg.Done()
+			defer wg.Done()
+			if err := doTransfer(transfer); err != nil {
+				errMu.Lock()
+				transferErrs = append(transferErrs, err)
+				errMu.Unlock()
+			}
 		}(transfer)
 	}
 	wg.Wait()
+	pb.Wait()
+
+	if len(transferErrs) > 0 {
+		for _, err := range transferErrs {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(1)
+	}
 }
 
 func main() {

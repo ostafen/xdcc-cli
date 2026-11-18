@@ -108,10 +108,22 @@ func (bar *progressBarImpl) Increment(n int) {
 
 func (bar *progressBarImpl) SetState(state ProgressState) {
 	if state != bar.state {
+		bar.state = state
 		oldBar := bar.Bar
-		bar.Bar = createMpbBar(bar.progress, bar.total, bar.fileName, state, bar.Bar)
+		bar.Bar = createMpbBar(bar.progress, bar.total, bar.fileName, state, oldBar)
 		oldBar.SetTotal(0, true)
+		switch state {
+		case ProgressStateCompleted:
+			bar.Bar.SetCurrent(int64(bar.total))
+			bar.Bar.SetTotal(int64(bar.total), true)
+		case ProgressStateAborted:
+			bar.Bar.SetTotal(0, true)
+		}
 	}
+}
+
+func Wait() {
+	progress.Wait()
 }
 
 func NewProgressBar() ProgressBar {
