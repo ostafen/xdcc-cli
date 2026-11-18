@@ -3,10 +3,10 @@ package xdcc
 import (
 	"bufio"
 	"crypto/tls"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -147,7 +147,7 @@ func (t *retryTransfer) Start() error {
 	}
 
 	t2 := newXdccTransfer(t.conf, true, true)
-	if err := t1.conn.Connect(); err == nil {
+	if err := t2.conn.Connect(); err == nil {
 		t.XdccTransfer = t2
 		return nil
 	}
@@ -165,6 +165,7 @@ type XdccTransfer struct {
 	url          IRCFile
 	conn         *irc.Conn
 	connAttempts int
+	requested    bool
 	started      bool
 	events       chan TransferEvent
 }
@@ -186,8 +187,7 @@ func NewTransfer(c Config) Transfer {
 }
 
 func newXdccTransfer(c Config, enableSSL bool, skipCertificateCheck bool) *XdccTransfer {
-	rand.Seed(time.Now().UTC().UnixNano())
-	nick := IRCClientUserName + strconv.Itoa(int(rand.Uint32()))
+	nick := fmt.Sprintf("xdcc%05d", rand.Intn(100000))
 
 	file := c.File
 
@@ -195,8 +195,8 @@ func newXdccTransfer(c Config, enableSSL bool, skipCertificateCheck bool) *XdccT
 	config.SSL = enableSSL
 	config.SSLConfig = &tls.Config{ServerName: file.Network, InsecureSkipVerify: skipCertificateCheck}
 	config.Server = file.Network
-	config.NewNick = func(nick string) string {
-		return nick + "" + strconv.Itoa(int(rand.Uint32()))
+	config.NewNick = func(string) string {
+		return fmt.Sprintf("xdcc%05d", rand.Intn(100000))
 	}
 
 	conn := irc.Client(config)
@@ -214,7 +214,9 @@ func newXdccTransfer(c Config, enableSSL bool, skipCertificateCheck bool) *XdccT
 }
 
 func (transfer *XdccTransfer) send(req CTCPRequest) {
-	transfer.conn.Privmsg(transfer.url.UserName, req.String())
+	if transfer.conn != nil {
+		transfer.conn.Privmsg(transfer.url.UserName, req.String())
+	}
 }
 
 func (transfer *XdccTransfer) setupHandlers(channel string, userName string, slot int) {
@@ -231,11 +233,14 @@ func (transfer *XdccTransfer) setupHandlers(channel string, userName string, slo
 
 	})
 
-	// send xdcc send on successfull join
-	conn.HandleFunc(irc.JOIN,
+	// send xdcc send once NAMES list finishes on channel join
+	conn.HandleFunc("366",
 		func(conn *irc.Conn, line *irc.Line) {
-			if strings.EqualFold(line.Args[0], channel) && !transfer.started {
-				transfer.send(&XdccSendReq{Slot: slot})
+			if len(line.Args) >= 2 && strings.EqualFold(line.Args[1], channel) && !transfer.requested && !transfer.started {
+				transfer.requested = true
+				time.AfterFunc(2*time.Second, func() {
+					transfer.send(&XdccSendReq{Slot: slot})
+				})
 			}
 		})
 
@@ -243,26 +248,39 @@ func (transfer *XdccTransfer) setupHandlers(channel string, userName string, slo
 
 	conn.HandleFunc(irc.CTCP,
 		func(conn *irc.Conn, line *irc.Line) {
+			if len(line.Args) < 2 || line.Args[1] == "" || line.Public() || !strings.EqualFold(line.Nick, userName) {
+				return
+			}
 			res, err := parseCTCPRes(line.Text())
 			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(1) // TODO: correct clean up
+				transfer.notifyEvent(&TransferAbortedEvent{Error: err.Error()})
+				return
 			}
-			transfer.handleCTCPRes(res)
+			if res != nil {
+				transfer.handleCTCPRes(res)
+			}
 		})
 
 	conn.HandleFunc(irc.DISCONNECTED,
 		func(conn *irc.Conn, line *irc.Line) {
-			var err error = nil
+			if transfer.started {
+				return
+			}
 
+			var err error
 			if transfer.connAttempts < maxConnAttempts {
+				transfer.requested = false
 				time.Sleep(time.Second)
 
 				err = conn.Connect()
 			}
 
 			if (err != nil || transfer.connAttempts >= maxConnAttempts) && !transfer.started {
-				transfer.notifyEvent(&TransferAbortedEvent{Error: err.Error()})
+				errMsg := "disconnected from server"
+				if err != nil {
+					errMsg = err.Error()
+				}
+				transfer.notifyEvent(&TransferAbortedEvent{Error: errMsg})
 			}
 
 			transfer.connAttempts++
@@ -278,7 +296,7 @@ type TransferProgessEvent struct {
 	TransferRate  float32
 }
 
-const downloadBufSize = 1024
+const downloadBufSize = 64 * 1024
 
 type TransferStartedEvent struct {
 	FileName string
@@ -297,7 +315,7 @@ func (transfer *XdccTransfer) notifyEvent(e TransferEvent) {
 
 type SpeedMonitorReader struct {
 	reader       io.Reader
-	elapsedTime  time.Duration
+	lastUpdate   time.Time
 	currValue    uint64
 	currentSpeed float64
 	onUpdate     func(amount int, speed float64)
@@ -305,51 +323,79 @@ type SpeedMonitorReader struct {
 
 func NewSpeedMonitorReader(reader io.Reader, onUpdate func(int, float64)) *SpeedMonitorReader {
 	return &SpeedMonitorReader{
-		reader:       reader,
-		elapsedTime:  time.Duration(0),
-		currValue:    0,
-		currentSpeed: 0,
-		onUpdate:     onUpdate,
+		reader:     reader,
+		lastUpdate: time.Now(),
+		onUpdate:   onUpdate,
 	}
 }
 
 func (monitor *SpeedMonitorReader) Read(buf []byte) (int, error) {
-	now := time.Now()
 	n, err := monitor.reader.Read(buf)
-	elapsedTime := time.Since(now)
-	monitor.currValue += uint64(n)
-	monitor.elapsedTime += elapsedTime
-
-	if monitor.elapsedTime > time.Second {
-		monitor.currentSpeed = float64(monitor.currValue) / monitor.elapsedTime.Seconds()
+	if n > 0 {
+		monitor.currValue += uint64(n)
+	}
+	elapsed := time.Since(monitor.lastUpdate)
+	if elapsed >= 250*time.Millisecond && monitor.currValue > 0 {
+		monitor.currentSpeed = float64(monitor.currValue) / elapsed.Seconds()
 		monitor.onUpdate(int(monitor.currValue), monitor.currentSpeed)
 		monitor.currValue = 0
-		monitor.elapsedTime = time.Duration(0)
+		monitor.lastUpdate = time.Now()
 	}
 	return n, err
 }
 
+func (monitor *SpeedMonitorReader) Flush() {
+	if monitor.currValue > 0 {
+		elapsed := time.Since(monitor.lastUpdate)
+		if elapsed > 0 {
+			monitor.currentSpeed = float64(monitor.currValue) / elapsed.Seconds()
+		}
+		monitor.onUpdate(int(monitor.currValue), monitor.currentSpeed)
+		monitor.currValue = 0
+		monitor.lastUpdate = time.Now()
+	}
+}
+
 func (transfer *XdccTransfer) handleXdccSendRes(send *XdccSendRes) {
+	if transfer.started {
+		return
+	}
+	transfer.started = true
+
 	go func() {
-		conn, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: send.IP, Port: send.Port})
+		addr := net.JoinHostPort(send.IP.String(), strconv.Itoa(send.Port))
+		var conn net.Conn
+		var err error
+		for attempt := 0; attempt < 3; attempt++ {
+			conn, err = net.DialTimeout("tcp", addr, 5*time.Second)
+			if err == nil {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
 		if err != nil {
-			log.Fatalf("unable to reach host %s:%d", send.IP.String(), send.Port)
+			transfer.notifyEvent(&TransferAbortedEvent{Error: fmt.Sprintf("unable to reach host %s: %v", addr, err)})
+			return
+		}
+		defer conn.Close()
+
+		if err := os.MkdirAll(transfer.filePath, 0755); err != nil {
+			transfer.notifyEvent(&TransferAbortedEvent{Error: err.Error()})
 			return
 		}
 
-		file, err := os.OpenFile(transfer.filePath+"/"+send.FileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		file, err := os.OpenFile(filepath.Join(transfer.filePath, send.FileName), os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			transfer.notifyEvent(&TransferAbortedEvent{Error: err.Error()})
+			return
+		}
+		defer file.Close()
 		fileWriter := bufio.NewWriter(file)
-
-		if err != nil {
-			log.Fatal(err.Error())
-			return
-		}
 
 		transfer.notifyEvent(&TransferStartedEvent{
 			FileName: send.FileName,
 			FileSize: uint64(send.FileSize),
 		})
-		transfer.started = true
 
 		reader := NewSpeedMonitorReader(conn, func(dowloadedAmount int, speed float64) {
 			transfer.notifyEvent(&TransferProgessEvent{
@@ -361,23 +407,43 @@ func (transfer *XdccTransfer) handleXdccSendRes(send *XdccSendRes) {
 		// download loop
 		downloadedBytesTotal := int64(0)
 		buf := make([]byte, downloadBufSize)
+		var ack [4]byte
 		for downloadedBytesTotal < send.FileSize {
 			n, err := reader.Read(buf)
+			if n > 0 {
+				if _, werr := fileWriter.Write(buf[:n]); werr != nil {
+					transfer.notifyEvent(&TransferAbortedEvent{Error: werr.Error()})
+					return
+				}
+
+				downloadedBytesTotal += int64(n)
+				binary.BigEndian.PutUint32(ack[:], uint32(downloadedBytesTotal))
+				_, _ = conn.Write(ack[:])
+			}
 
 			if err != nil {
-				log.Fatal(err.Error())
+				if err == io.EOF {
+					break
+				}
+				transfer.notifyEvent(&TransferAbortedEvent{Error: err.Error()})
 				return
 			}
-
-			if _, err := fileWriter.Write(buf[:n]); err != nil {
-				log.Fatal(err.Error())
-				return
-			}
-
-			downloadedBytesTotal += int64(n)
 		}
-		fileWriter.Flush()
 
+		if downloadedBytesTotal < send.FileSize {
+			transfer.notifyEvent(&TransferAbortedEvent{Error: fmt.Sprintf("incomplete transfer: got %d of %d bytes", downloadedBytesTotal, send.FileSize)})
+			return
+		}
+
+		reader.Flush()
+		if err := fileWriter.Flush(); err != nil {
+			transfer.notifyEvent(&TransferAbortedEvent{Error: err.Error()})
+			return
+		}
+
+		if transfer.conn != nil && transfer.conn.Connected() {
+			transfer.conn.Quit()
+		}
 		transfer.notifyEvent(&TransferCompletedEvent{})
 	}()
 }

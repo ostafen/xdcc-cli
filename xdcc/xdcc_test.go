@@ -1,6 +1,15 @@
 package xdcc
 
-import "testing"
+import (
+	"bytes"
+	"encoding/binary"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
 
 func TestParseCTCPRes(t *testing.T) {
 	tests := []struct {
@@ -69,5 +78,124 @@ func TestParseCTCPRes(t *testing.T) {
 				t.Fatalf("got %+v, want file=%q ip=%s port=%d size=%d", res, tc.wantFile, tc.wantIP, tc.wantPort, tc.wantSize)
 			}
 		})
+	}
+}
+
+func TestHandleXdccSendResSuccess(t *testing.T) {
+	payload := bytes.Repeat([]byte("0123456789abcdef"), 12*1024)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen failed: %v", err)
+	}
+	defer ln.Close()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		defer conn.Close()
+
+		ackDone := make(chan error, 1)
+		go func() {
+			var lastAck uint32
+			var buf [4]byte
+			for lastAck < uint32(len(payload)) {
+				if _, err := io.ReadFull(conn, buf[:]); err != nil {
+					ackDone <- err
+					return
+				}
+				lastAck = binary.BigEndian.Uint32(buf[:])
+			}
+			ackDone <- nil
+		}()
+
+		if _, err := conn.Write(payload); err != nil {
+			serverErr <- err
+			return
+		}
+		serverErr <- <-ackDone
+	}()
+
+	outDir := filepath.Join(t.TempDir(), "sub")
+	transfer := &XdccTransfer{
+		filePath: outDir,
+		url:      IRCFile{Network: "127.0.0.1", Channel: "#test", UserName: "bot", Slot: 1},
+		events:   make(chan TransferEvent, defaultEventChanSize),
+	}
+	transfer.handleXdccSendRes(&XdccSendRes{
+		FileName: "video test.mkv",
+		IP:       net.ParseIP("127.0.0.1"),
+		Port:     ln.Addr().(*net.TCPAddr).Port,
+		FileSize: int64(len(payload)),
+	})
+
+	timeout := time.After(5 * time.Second)
+	for done := false; !done; {
+		select {
+		case evt := <-transfer.PollEvents():
+			switch e := evt.(type) {
+			case *TransferCompletedEvent:
+				done = true
+			case *TransferAbortedEvent:
+				t.Fatalf("unexpected abort: %s", e.Error)
+			}
+		case <-timeout:
+			t.Fatal("timed out waiting for completion")
+		}
+	}
+
+	if err := <-serverErr; err != nil {
+		t.Fatalf("mock DCC server error: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(outDir, "video test.mkv"))
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("file content mismatch (err=%v, len=%d)", err, len(got))
+	}
+}
+
+func TestHandleXdccSendResTruncatedEOF(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen failed: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = conn.Write(bytes.Repeat([]byte("A"), 5000))
+		_ = conn.Close()
+	}()
+
+	transfer := &XdccTransfer{
+		filePath: t.TempDir(),
+		url:      IRCFile{Network: "127.0.0.1", Channel: "#test", UserName: "bot", Slot: 1},
+		events:   make(chan TransferEvent, defaultEventChanSize),
+	}
+	transfer.handleXdccSendRes(&XdccSendRes{
+		FileName: "truncated.mkv",
+		IP:       net.ParseIP("127.0.0.1"),
+		Port:     ln.Addr().(*net.TCPAddr).Port,
+		FileSize: 10000,
+	})
+
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case evt := <-transfer.PollEvents():
+			switch evt.(type) {
+			case *TransferCompletedEvent:
+				t.Fatal("expected abort on truncated EOF, got completion")
+			case *TransferAbortedEvent:
+				return
+			}
+		case <-timeout:
+			t.Fatal("timed out waiting for abort")
+		}
 	}
 }
