@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -40,10 +41,10 @@ type XdccSendRes struct {
 	FileName string
 	IP       net.IP
 	Port     int
-	FileSize int
+	FileSize int64
 }
 
-func uint32ToIP(n int) net.IP {
+func uint32ToIP(n uint32) net.IP {
 	a := byte((n >> 24) & 255)
 	b := byte((n >> 16) & 255)
 	c := byte((n >> 8) & 255)
@@ -51,63 +52,64 @@ func uint32ToIP(n int) net.IP {
 	return net.IPv4(a, b, c, d)
 }
 
-const XdccSendResArgs = 4
+const XdccSendResMinArgs = 4
 
 func (send *XdccSendRes) Name() string {
 	return SEND
 }
 
 func (send *XdccSendRes) Parse(args []string) error {
-	if len(args) != XdccSendResArgs {
+	if len(args) < XdccSendResMinArgs {
 		return errors.New("invalid number of arguments")
 	}
 
-	send.FileName = args[0]
+	rawName := strings.Trim(strings.Join(args[:len(args)-3], " "), "\"")
+	cleanName := filepath.Base(strings.ReplaceAll(rawName, "\\", "/"))
+	if strings.ContainsAny(rawName, "/\\") || cleanName == "" || cleanName == "." || cleanName == ".." || cleanName == "/" {
+		return fmt.Errorf("invalid filename: %q", rawName)
+	}
+	send.FileName = cleanName
 
-	ipUint32, err := strconv.Atoi(args[1])
+	ipUint32, err := strconv.ParseUint(args[len(args)-3], 10, 32)
+	if err != nil {
+		return err
+	}
+	send.IP = uint32ToIP(uint32(ipUint32))
 
+	send.Port, err = strconv.Atoi(args[len(args)-2])
 	if err != nil {
 		return err
 	}
 
-	send.IP = uint32ToIP(ipUint32)
-	send.Port, err = strconv.Atoi(args[2])
-
-	if err != nil {
-		return err
-	}
-
-	send.FileSize, err = strconv.Atoi(args[3])
-
-	if err != nil {
-		return err
+	send.FileSize, err = strconv.ParseInt(args[len(args)-1], 10, 64)
+	if err != nil || send.FileSize <= 0 {
+		return errors.New("invalid file size")
 	}
 	return nil
 }
 
 const (
 	SEND    = "SEND"
-	VERSION = "\x01VERSION\x01"
+	VERSION = "VERSION"
 )
 
 func parseCTCPRes(text string) (CTCPResponse, error) {
-	fields := strings.Fields(text)
+	fields := strings.Fields(strings.Trim(text, "\x01"))
+	if len(fields) == 0 {
+		return nil, nil
+	}
 
-	var resp CTCPResponse = nil
-
-	switch strings.TrimSpace(fields[0]) {
+	var resp CTCPResponse
+	switch strings.ToUpper(strings.TrimSpace(fields[0])) {
 	case SEND:
 		resp = &XdccSendRes{}
 	case VERSION:
 		return nil, nil
+	default:
+		return nil, nil
 	}
 
-	if resp == nil {
-		return nil, errors.New("invalid command: " + fields[0])
-	}
-
-	err := resp.Parse(fields[1:])
-	if err != nil {
+	if err := resp.Parse(fields[1:]); err != nil {
 		return nil, err
 	}
 	return resp, nil
@@ -357,7 +359,7 @@ func (transfer *XdccTransfer) handleXdccSendRes(send *XdccSendRes) {
 		})
 
 		// download loop
-		downloadedBytesTotal := 0
+		downloadedBytesTotal := int64(0)
 		buf := make([]byte, downloadBufSize)
 		for downloadedBytesTotal < send.FileSize {
 			n, err := reader.Read(buf)
@@ -372,7 +374,7 @@ func (transfer *XdccTransfer) handleXdccSendRes(send *XdccSendRes) {
 				return
 			}
 
-			downloadedBytesTotal += n
+			downloadedBytesTotal += int64(n)
 		}
 		fileWriter.Flush()
 
