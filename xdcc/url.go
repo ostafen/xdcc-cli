@@ -24,7 +24,7 @@ const ircFileURLFields = 4
 
 func parseSlot(slotStr string) (int, error) {
 	if strings.HasPrefix(slotStr, "#") {
-		strconv.Atoi(strings.TrimPrefix(slotStr, "#"))
+		slotStr = strings.TrimPrefix(slotStr, "#")
 	}
 	return strconv.Atoi(slotStr)
 }
